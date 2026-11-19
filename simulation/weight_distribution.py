@@ -1,105 +1,74 @@
-import sys
-import os
-sys.path.append('./src')
+"""CLI entrypoint for computing exact weight distributions of two-set Tamo-Barg codes."""
 
-from TamoBargTwoSets import TamoBargCodeTwoSets
+import argparse
+from collections.abc import Sequence
 
-import csv
-from sage.all import *
-from AdditiveSubgroup import *
-import matplotlib.pyplot as plt
-from networkx.algorithms import *
-import networkx as nx
+from optimal_lrc.simulation import run_weight_distribution_analysis
 
-q = 64  # Field size
-n = 64  # Code dimension
-k = 6  # Information/message dimension
-r = [2, 5]  # Locality of the code
-local_minimum_distance = [3, 3]  # correct two errors
-sub_group_type = ["add", "mult"]
 
-# GF
-F = GF(q, repr='int')
+def build_parser() -> argparse.ArgumentParser:
+    """Build the command-line argument parser for ``weight_distribution.py``."""
+    parser = argparse.ArgumentParser(
+        description="Compute the exact Hamming weight distribution and minimum distance."
+    )
+    parser.add_argument("--q", type=int, default=64, help="Finite field size q.")
+    parser.add_argument("--n", type=int, default=64, help="Codeword length n.")
+    parser.add_argument("--k", type=int, default=6, help="Message dimension k.")
+    parser.add_argument(
+        "--r",
+        nargs=2,
+        type=int,
+        default=[2, 5],
+        metavar=("R1", "R2"),
+        help="Localities of the two partitions.",
+    )
+    parser.add_argument(
+        "--local-min-dist",
+        nargs=2,
+        type=int,
+        default=[3, 3],
+        metavar=("D1", "D2"),
+        help="Local minimum distances of the two partitions.",
+    )
+    parser.add_argument(
+        "--subgroup-types",
+        nargs=2,
+        choices=("add", "mult"),
+        default=["add", "mult"],
+        metavar=("T1", "T2"),
+        help="Subgroup types ('add' or 'mult') for the two partitions.",
+    )
+    parser.add_argument(
+        "--add-idx",
+        type=int,
+        default=None,
+        help="Optional index into enumerated additive subgroups overriding canonical selection.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default="./results",
+        help="Output directory for weight distribution CSV and graph PNG.",
+    )
+    return parser
 
-# Specify Additive subgroup
-if sub_group_type[0] == "add":
-    sub_group_size = r[0] + local_minimum_distance[0] - 1
-    additive_subgroups = find_additive_subgroups(F, sub_group_size)
 
-# GF(64) 4x7 --- idx 10
-add_idx = None
+def main(argv: Sequence[str] | None = None) -> None:
+    """Parse CLI flags and execute the weight distribution computation."""
+    parser = build_parser()
+    args = parser.parse_args(argv)
 
-if add_idx is None:
-    add_subgroup = [None, None]
-else:
-    add_subgroup = [additive_subgroups[add_idx], None]
+    run_weight_distribution_analysis(
+        q=args.q,
+        n=args.n,
+        k=args.k,
+        locality=args.r,
+        local_minimum_distance=args.local_min_dist,
+        sub_group_type=args.subgroup_types,
+        add_idx=args.add_idx,
+        output_dir=args.output_dir,
+    )
 
-C = TamoBargCodeTwoSets(F, n, k, r, local_minimum_distance, sub_group_type, shift_add=False, subgroup=add_subgroup)
 
-sub_group, sub_group_type = C.sub_group()
-partitions, _ = C.partition()
-evalpts = C.evaluation_points()
-
-# Bipartite Graph
-G, G_L, G_R = C.bipartite_graph()
-left, right = len(G_L), len(G_R)
-pos = dict()
-pos.update((i, (i - left / 2, 1)) for i in range(left))
-pos.update((i, (i - left - right / 2, 0)) for i in range(left, left + right))
-nx.draw(G, with_labels=True, pos=pos, node_size=300, width=0.4)
-
-print(C)
-print("k_max: ", C.max_dimension())
-print("Design Distance: ", C.design_distance())
-print("Local Minimum distance d1: ", local_minimum_distance[0])
-print("Local Minimum distance d2: ", local_minimum_distance[1])
-print("First Subgroup: ", sub_group[0])
-print("First Subgroup Type: ", sub_group_type[0])
-print("First Subgroup Size: ", len(sub_group[0]))
-print("Second Subgroup: ", sub_group[1])
-print("Second Subgroup Type: ", sub_group_type[1])
-print("Second Subgroup Size: ", len(sub_group[1]))
-print("Partitions Graph is Connected:", nx.is_connected(G))
-print("Number of disjoint subgraphs:", nx.number_connected_components(G))
-print("Partitions Graph Edge Expansion:", cuts.edge_expansion(G, G_R))
-
-if add_idx is None:
-    sim_name = "GF_" + str(q) + "_" + sub_group_type[0] + "_" + str(len(sub_group[0])) + "_" + sub_group_type[1] + "_" + str(len(sub_group[1]))
-else:
-    sim_name = "GF_" + str(q) + "_" + sub_group_type[0] + "_" + str(len(sub_group[0])) + "_" + sub_group_type[1] + "_" + str(len(sub_group[1])) + "_idx_" + str(add_idx)
-
-res_dir = './results/' + sim_name + "_weight_dist"
-
-print(sim_name)
-
-# Create Directory of not exists
-isExist = os.path.exists(res_dir)
-if not isExist:
-    os.makedirs(res_dir)
-
-res_path = res_dir + '/' + sim_name + '_weight_dist.csv'
-res_file_handle = open(res_path, 'w', newline='')
-writer = csv.writer(res_file_handle)
-
-writer.writerow(["k_max: ", C.max_dimension()])
-writer.writerow(["Design Distance: ", C.design_distance()])
-writer.writerow(["Partitions Graph is Connected:", nx.is_connected(G)])
-writer.writerow(["Number of disjoint subgraphs:", nx.number_connected_components(G)])
-writer.writerow(["Number of disjoint subgraphs:", nx.number_connected_components(G)])
-writer.writerow(["Partitions Graph Edge Expansion:", cuts.edge_expansion(G, G_R)])
-
-print("## Setup Done ##")
-print("## Start Simulation ", sim_name, "##")
-w = C.weight_distribution()
-writer.writerow(["Weight Distribution: ", w])
-
-print(w)
-
-for i in range(1,len(w)):
-    if w[i] != 0:
-        print("Code Distance: ", i)
-        writer.writerow(["Code Distance: ", i])
-        break
-
-print("## Simulation Done ##")
-res_file_handle.close()
+if __name__ == "__main__":
+    main()

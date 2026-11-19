@@ -1,50 +1,35 @@
-## Erasure Test
+# `optimal_lrc` Test Suite
 
-```
-GF:  13
-Code dim n:  12
-Message dim k:  8
-Locality r:  3
-Global Minimum distance d:  3
-Local Minimum distance d:  2
-[12, 8, 3] Tamo-Barg Code over GF(13)
-Erasure Vector:  (1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0)
-Recieved Word :  (0, 5, 7, 4, 9, 2, 9, 0, 0, 11, 5, 7)
-Codeword      :  (7, 5, 7, 4, 9, 2, 9, 0, 11, 11, 5, 7)
-Corr Codeword :  (7, 5, 7, 4, 9, 2, 9, 0, 11, 11, 5, 7)
-Correction Successfull:  True
+Deterministic, headless-safe `pytest` unit, property, and regression suite for `optimal_lrc` and its CLI simulation scripts.
+
+## Running the Test Suite
+
+Using a SageMath Python environment (`sage -python` or a virtual environment with `passagemath` installed):
+
+```bash
+sage -python -m pytest -v
 ```
 
-## Error Test
+To run a single test module:
 
-```
-GF:  16
-Code dim n:  16
-Message dim k:  5
-Locality r:  2
-Local Minimum distance d:  3
-[16, 5, 2] Tamo-Barg Code over GF(16)
-Error              :  (0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 15, 0)
-Recieved Word      :  (12, 4, 9, 1, 8, 5, 0, 13, 5, 6, 5, 5, 4, 1, 6, 12)
-Original Codeword  :  (12, 4, 9, 1, 8, 5, 0, 13, 5, 5, 5, 5, 4, 1, 9, 12)
-Corrected Codeword :  (12, 4, 9, 1, 8, 5, 0, 13, 5, 5, 5, 5, 4, 1, 9, 12)
-Correction Successfull:  True
+```bash
+sage -python -m pytest tests/test_tamo_barg_two_sets.py -v
 ```
 
-## TwoSets Error Test
+To lint and check formatting on the test suite:
 
+```bash
+ruff check tests/
+ruff format --check tests/
 ```
-GF:  64
-Code dim n:  63
-Message dim k:  35
-Locality r1:  5
-Locality r2:  7
-Local Minimum distance d1:  3
-Local Minimum distance d2:  3
-[63, 35, [5, 7]] Tamo-Barg Code over GF(64)
-Error              :  (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 29, 0, 40, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 38, 0, 0, 0, 0, 21, 0, 8)
-Recieved Word      :  (21, 44, 18, 44, 53, 53, 19, 28, 25, 41, 44, 34, 43, 3, 35, 13, 9, 31, 2, 23, 39, 39, 42, 47, 30, 37, 49, 32, 26, 62, 9, 38, 59, 51, 22, 49, 39, 42, 19, 32, 49, 20, 2, 20, 52, 2, 8, 42, 36, 50, 43, 55, 31, 23, 3, 62, 60, 54, 56, 55, 10, 33, 1)
-Original Codeword  :  (21, 44, 18, 44, 53, 53, 19, 28, 25, 41, 44, 34, 43, 3, 35, 16, 9, 55, 2, 23, 39, 39, 42, 47, 30, 37, 49, 32, 26, 62, 9, 38, 59, 51, 22, 49, 39, 42, 19, 32, 49, 20, 2, 20, 52, 2, 8, 42, 36, 50, 43, 55, 31, 23, 3, 24, 60, 54, 56, 55, 31, 33, 9)
-Corrected Codeword :  ((21, 44, 18, 44, 53, 53, 19, 28, 25, 41, 44, 34, 43, 3, 35, 16, 9, 55, 2, 23, 39, 39, 42, 47, 30, 37, 49, 32, 26, 62, 9, 38, 59, 51, 22, 49, 39, 42, 19, 32, 49, 20, 2, 20, 52, 2, 8, 42, 36, 50, 43, 55, 31, 23, 3, 24, 60, 54, 56, 55, 31, 33, 9), 2)
-Correction Successfull:  True
-```
+
+## Test Modules & Regression Coverage
+
+| Test Module | Scope | Key Regressions & Optimizations Covered |
+| :--- | :--- | :--- |
+| `tests/conftest.py` | Autouse deterministic seeding (`random.seed(42)`, `set_random_seed(42)`) and headless `Agg` Matplotlib backend | `B18` (no interactive GUI plot window blocking) |
+| `tests/test_subgroups.py` | Finite-field additive/multiplicative subgroups, Gaussian binomial counts, coset partitions, and univariate polynomial / Lagrange helpers | `B7` ($p \ge 11$ and $p > 36$ subspaces, non-prime-power validation), `B8` (`{0}` and full-field canonical subgroups, deterministic `{0}` coset), `B13` (exact multiplicative subgroup orders), `P3`, `P5` |
+| `tests/test_expander.py` | Bipartite coset multigraphs (`["add", "add"]`, `["add", "mult"]`, `["mult", "mult"]`), component index extraction, spectral expansion metrics, and plot saving | `B12` (polynomial field representation without `repr='int'` and $n = 63$ `["mult", "mult"]` indices in `0 .. 62`), `B18` (figure cleanup), `P4` |
+| `tests/test_tamo_barg.py` | Single-set `TamoBargCode` (`[12, 8, 3]` over $GF(13)$, `[16, 5, 2]` over $GF(16)$), `VectorEncoder`, `ErasureDecoder`, and `ErrorDecoder` | `B4` (immutable received vectors not mutated), `B5` (`ErrorDecoder` ambient `input_space` & `_repr_`), `B6` (`enc_basis` sliced to $k < k_{\max}$ and `enc_poly`), `B11` (upfront `ValueError` validation), `B17`, `P1` |
+| `tests/test_tamo_barg_two_sets.py` | Two-set `TamoBargCodeTwoSets` across all 4 subgroup pairs, `VectorEncoder`, and all 6 iterative/global/two-step decoders | `B1` (Partition 1 uncorrectable error & multi-iteration recovery), `B2` ($d_{\text{local}} - 1$ DUE Lagrange recovery & erasure clearing), `B3` (`GlobalErasureErrorDecoder` `evaluation_points()` Lagrange branch), `B4` (immutability & canonical return shapes), `B5` (Cartesian `input_space`), `B6`, `B9` (`shift_add=True` disjoint subgroups), `B10` (`["mult", "add"]` & 2-set validation), `B11`, `B13`, `B17`, `P1`, `P2`, `P5`, `P6` (`minimum_distance_py`) |
+| `tests/test_simulations.py` | `optimal_lrc.simulation` (`DecodeOutcome`, `build_decoder`, `invoke_decoder`, `process_error_distribution_csv`) and `main(argv)` smoke tests across all 7 `simulation/*.py` scripts | `B14` (`(design_distance - 1) // 2` precedence), `B15` (all 6 decoder constructor/return dispatch paths), `B16` (`sim_itr < print_freq_factor` without `ZeroDivisionError`), `B18` (closed CSV handles, no duplicate metadata rows, zero leaked Matplotlib figures) |
