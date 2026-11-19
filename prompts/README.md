@@ -1,6 +1,6 @@
-# `optimal_lrc` Multi-Agent Refactoring Swarm Prompts
+# `tamo_barg_lrc` Multi-Agent Refactoring Swarm Prompts
 
-This directory contains a complete, conflict-free **multi-agent swarm prompt suite** designed to refactor `optimal_lrc` into a modern, PEP 8–compliant, high-performance SageMath Python package (`src/optimal_lrc/`), resolve all **18 identified bugs (`B1`–`B18`)**, and implement **6 major algorithmic optimizations (`P1`–`P6`)**.
+This directory contains a complete, conflict-free **multi-agent swarm prompt suite** designed to refactor `tamo_barg_lrc` into a modern, PEP 8–compliant, high-performance SageMath Python package (`src/tamo_barg_lrc/`), resolve all **18 identified bugs (`B1`–`B18`)**, and implement **6 major algorithmic optimizations (`P1`–`P6`)**.
 
 ---
 
@@ -10,12 +10,12 @@ This directory contains a complete, conflict-free **multi-agent swarm prompt sui
 | :--- | :--- | :---: | :--- |
 | [`shared_context_and_contracts.md`](./shared_context_and_contracts.md) | Shared API contracts, return-signature table, style guide, and full `B1`–`B18` / `P1`–`P6` manifest (inject into **every** agent's context) | All | *(Read-only reference)* |
 | [`00_orchestrator.md`](./00_orchestrator.md) | **Lead Orchestrator Agent** coordinating Waves 1–4, inter-wave verification gates, and failure routing | Control | *(Coordinates workers)* |
-| [`01_packaging_and_tooling.md`](./01_packaging_and_tooling.md) | **Packaging, Tooling & Docs Architect** | Wave 1 | `pyproject.toml`, `.gitignore`, `src/optimal_lrc/__init__.py`, `README.md` |
-| [`02_subgroups_and_polynomials.md`](./02_subgroups_and_polynomials.md) | **Finite-Field Subgroups & Polynomial Algebra Specialist** | Wave 1 | `src/optimal_lrc/subgroups.py`, `src/optimal_lrc/polynomials.py` |
-| [`03_expander_and_graph.md`](./03_expander_and_graph.md) | **Bipartite Coset Graph & Expander Specialist** | Wave 1 | `src/optimal_lrc/expander.py` |
-| [`04_single_set_tamo_barg.md`](./04_single_set_tamo_barg.md) | **Single-Set Tamo–Barg Code, Encoder & Decoders Specialist** | Wave 2 | `src/optimal_lrc/tamo_barg.py` |
-| [`05_two_set_tamo_barg.md`](./05_two_set_tamo_barg.md) | **Two-Set Tamo–Barg Code, Encoder & Decoders Specialist** | Wave 2 | `src/optimal_lrc/tamo_barg_two_sets.py` |
-| [`06_simulations_refactor.md`](./06_simulations_refactor.md) | **Simulation Engine, Post-Processing & CLI Scripts Specialist** | Wave 3 | `src/optimal_lrc/simulation/*`, `simulation/*` (deletes `simulation/proces_results.py`) |
+| [`01_packaging_and_tooling.md`](./01_packaging_and_tooling.md) | **Packaging, Tooling & Docs Architect** | Wave 1 | `pyproject.toml`, `.gitignore`, `src/tamo_barg_lrc/__init__.py`, `README.md` |
+| [`02_subgroups_and_polynomials.md`](./02_subgroups_and_polynomials.md) | **Finite-Field Subgroups & Polynomial Algebra Specialist** | Wave 1 | `src/tamo_barg_lrc/subgroups.py`, `src/tamo_barg_lrc/polynomials.py` |
+| [`03_expander_and_graph.md`](./03_expander_and_graph.md) | **Bipartite Coset Graph & Expander Specialist** | Wave 1 | `src/tamo_barg_lrc/expander.py` |
+| [`04_single_set_tamo_barg.md`](./04_single_set_tamo_barg.md) | **Single-Set Tamo–Barg Code, Encoder & Decoders Specialist** | Wave 2 | `src/tamo_barg_lrc/tamo_barg.py` |
+| [`05_two_set_tamo_barg.md`](./05_two_set_tamo_barg.md) | **Two-Set Tamo–Barg Code, Encoder & Decoders Specialist** | Wave 2 | `src/tamo_barg_lrc/tamo_barg_two_sets.py` |
+| [`06_simulations_refactor.md`](./06_simulations_refactor.md) | **Simulation Engine, Post-Processing & CLI Scripts Specialist** | Wave 3 | `src/tamo_barg_lrc/simulation/*`, `simulation/*` (deletes `simulation/proces_results.py`) |
 | [`07_tests_and_cleanup.md`](./07_tests_and_cleanup.md) | **Pytest Regression Suite & Legacy Cleanup Specialist** | Wave 3 | `tests/*`, deletes legacy `src/*.py` & `tests/*_Test.py` / `tests/TamoBarg_Expander*.py` |
 | [`08_qa_and_benchmark_verifier.md`](./08_qa_and_benchmark_verifier.md) | **QA, Static Analysis & Performance Benchmark Verifier** | Wave 4 | *(Read-only verification & benchmark validation)* |
 

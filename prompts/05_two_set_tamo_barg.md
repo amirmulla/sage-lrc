@@ -1,11 +1,11 @@
 # Agent 05 — Two-Set Tamo–Barg Code, Encoder & Decoders Specialist (Wave 2)
 
 ## Role & Mission
-You are the **Two-Set Tamo–Barg Code, Encoder & Decoders Specialist** in Wave 2 of the `optimal_lrc` refactoring swarm. First read [`prompts/shared_context_and_contracts.md`](./shared_context_and_contracts.md) completely, then inspect `src/TamoBargTwoSets.py`, `src/optimal_lrc/subgroups.py`, `src/optimal_lrc/polynomials.py`, and `src/optimal_lrc/expander.py`.
+You are the **Two-Set Tamo–Barg Code, Encoder & Decoders Specialist** in Wave 2 of the `tamo_barg_lrc` refactoring swarm. First read [`prompts/shared_context_and_contracts.md`](./shared_context_and_contracts.md) completely, then inspect `src/TamoBargTwoSets.py`, `src/tamo_barg_lrc/subgroups.py`, `src/tamo_barg_lrc/polynomials.py`, and `src/tamo_barg_lrc/expander.py`.
 
 ## Exclusive File Ownership
 You may **ONLY** create or modify:
-* `src/optimal_lrc/tamo_barg_two_sets.py`
+* `src/tamo_barg_lrc/tamo_barg_two_sets.py`
 
 Do **NOT** delete legacy `src/TamoBargTwoSets.py` (Agent 07 deletes it in Wave 3) and do **NOT** touch any other files.
 
@@ -25,12 +25,12 @@ Do **NOT** delete legacy `src/TamoBargTwoSets.py` (Agent 07 deletes it in Wave 3
 * **B17**: Replace all bare `except:` clauses with `except (DecodingError, ValueError):`.
 * **P1 & P2**: Precompute local GRS parity-check matrices $H_{i,j}$ for every coset in both partitions to skip zero-syndrome cosets in $O(m)$ Cython/FLINT arithmetic, and add exact convergence + trapping-set stall detection.
 * **P4**: Delegate bipartite graph construction to `create_bipartite_coset_graph` ($O(n)$).
-* **P5**: Delegate degree-minimizing basis intersection (`intersect_encoding_bases`) to `optimal_lrc.polynomials`.
+* **P5**: Delegate degree-minimizing basis intersection (`intersect_encoding_bases`) to `tamo_barg_lrc.polynomials`.
 * **P6**: Speed up `minimum_distance_py()` by $(q - 1)\times$ by iterating only over monic (projectively normalized, first non-zero coordinate $= 1$) messages in $GF(q)^k$.
 
 ---
 
-## Detailed Implementation Specifications: `src/optimal_lrc/tamo_barg_two_sets.py`
+## Detailed Implementation Specifications: `src/tamo_barg_lrc/tamo_barg_two_sets.py`
 
 ### 1. `TamoBargCodeTwoSets(AbstractLinearCode)`
 * **Signature**:
@@ -137,7 +137,7 @@ Do **NOT** delete legacy `src/TamoBargTwoSets.py` (Agent 07 deletes it in Wave 3
 ---
 
 ### 2. `TamoBargTwoSetsVectorEncoder(Encoder)`
-* Compute per-partition `_good_poly[i]`, `_algebra_basis[i]`, `_enc_basis[i]` via `optimal_lrc.polynomials` over `PolynomialRing(code.base_field(), "x")` (no `PolynomialQuotientRing` needed!).
+* Compute per-partition `_good_poly[i]`, `_algebra_basis[i]`, `_enc_basis[i]` via `tamo_barg_lrc.polynomials` over `PolynomialRing(code.base_field(), "x")` (no `PolynomialQuotientRing` needed!).
 * Compute degree-minimizing intersection basis `full_comb_basis = intersect_encoding_bases(self._base_poly_ring, self._enc_basis[0], self._enc_basis[1], code.length())` (**Fixes P5**).
 * Store `self._max_dimension = len(full_comb_basis)` and `self._comb_enc_basis = full_comb_basis[:code.dimension()]`.
 * Implement `enc_basis()`, `enc_basis_ext()`, `enc_algebra_basis()`, `enc_good_poly()`, `max_dimension()`, `enc_poly(self, message)` (**Fixes B6**), and `@cached_method def generator_matrix(self)`.
@@ -241,7 +241,7 @@ Do **NOT** delete legacy `src/TamoBargTwoSets.py` (Agent 07 deletes it in Wave 3
 ---
 
 ## Acceptance Checklist
-- [ ] `ruff check src/optimal_lrc/tamo_barg_two_sets.py` and `ruff format --check src/optimal_lrc/tamo_barg_two_sets.py` pass cleanly.
+- [ ] `ruff check src/tamo_barg_lrc/tamo_barg_two_sets.py` and `ruff format --check src/tamo_barg_lrc/tamo_barg_two_sets.py` pass cleanly.
 - [ ] All 6 decoder keys (`"IterativeDecoder"`, `"TwoStepsDecoder"`, `"GlobalDecoder"`, `"IterativeErasureErrorDecoder"`, `"GlobalErasureErrorDecoder"`, `"TwoStepsErasureErrorDecoder"`) match `shared_context_and_contracts.md` Section 4.
 - [ ] Both `["add", "mult"]` AND `["mult", "add"]` construct cleanly without `ValueError: 0 is not in list` (**B10**).
 - [ ] Partition-1-only uncorrectable errors do NOT prematurely stop iteration 1 (**B1**).

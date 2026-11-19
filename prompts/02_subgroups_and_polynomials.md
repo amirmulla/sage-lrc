@@ -1,12 +1,12 @@
 # Agent 02 — Finite-Field Subgroups & Polynomial Algebra Specialist (Wave 1)
 
 ## Role & Mission
-You are the **Finite-Field Subgroups & Polynomial Algebra Specialist** in Wave 1 of the `optimal_lrc` refactoring swarm. First read [`prompts/shared_context_and_contracts.md`](./shared_context_and_contracts.md) completely, then inspect the legacy implementations in `src/AdditiveSubgroup.py`, `src/TamoBarg.py`, and `src/TamoBargTwoSets.py` for reference.
+You are the **Finite-Field Subgroups & Polynomial Algebra Specialist** in Wave 1 of the `tamo_barg_lrc` refactoring swarm. First read [`prompts/shared_context_and_contracts.md`](./shared_context_and_contracts.md) completely, then inspect the legacy implementations in `src/AdditiveSubgroup.py`, `src/TamoBarg.py`, and `src/TamoBargTwoSets.py` for reference.
 
 ## Exclusive File Ownership
 You may **ONLY** create or modify:
-* `src/optimal_lrc/subgroups.py`
-* `src/optimal_lrc/polynomials.py`
+* `src/tamo_barg_lrc/subgroups.py`
+* `src/tamo_barg_lrc/polynomials.py`
 
 Do **NOT** delete legacy `src/*.py` files (Agent 07 handles legacy cleanup in Wave 3) and do **NOT** touch any other files.
 
@@ -21,7 +21,7 @@ Do **NOT** delete legacy `src/*.py` files (Agent 07 handles legacy cleanup in Wa
 
 ---
 
-## Detailed Specifications: `src/optimal_lrc/subgroups.py`
+## Detailed Specifications: `src/tamo_barg_lrc/subgroups.py`
 
 Use explicit SageMath imports (`from sage.arith.misc import divisors`, `from sage.modules.free_module import VectorSpace`, `from sage.rings.finite_rings.finite_field_constructor import GF`, etc.)—**never** `from sage.all import *`.
 
@@ -101,7 +101,7 @@ Implement the exact public API required by `shared_context_and_contracts.md`:
 
 ---
 
-## Detailed Specifications: `src/optimal_lrc/polynomials.py`
+## Detailed Specifications: `src/tamo_barg_lrc/polynomials.py`
 
 Implement fast FLINT-backed univariate polynomial utilities (**Fixes P5**):
 
@@ -153,7 +153,7 @@ Implement fast FLINT-backed univariate polynomial utilities (**Fixes P5**):
 ---
 
 ## Acceptance Checklist
-- [ ] `ruff check src/optimal_lrc/subgroups.py src/optimal_lrc/polynomials.py` passes with zero errors.
-- [ ] `ruff format --check src/optimal_lrc/subgroups.py src/optimal_lrc/polynomials.py` passes.
+- [ ] `ruff check src/tamo_barg_lrc/subgroups.py src/tamo_barg_lrc/polynomials.py` passes with zero errors.
+- [ ] `ruff format --check src/tamo_barg_lrc/subgroups.py src/tamo_barg_lrc/polynomials.py` passes.
 - [ ] Works across prime fields (`GF(13)`, `GF(37)`, `GF(101)`) and extension fields (`GF(16)`, `GF(64)`, `GF(81)`, `GF(121)`, `GF(256)`) regardless of `repr='int'` vs default polynomial representation.
 - [ ] Zero wildcard imports, zero bitwise `&` on booleans, zero `int(..., base)` string hacks.

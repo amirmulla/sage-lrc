@@ -1,4 +1,4 @@
-"""Shared pytest fixtures and deterministic RNG setup for optimal_lrc tests."""
+"""Shared pytest fixtures and deterministic RNG setup for tamo_barg_lrc tests."""
 
 import random
 import sys
@@ -8,7 +8,7 @@ import matplotlib
 import pytest
 from sage.misc.randstate import set_random_seed
 
-import optimal_lrc  # noqa: F401 - initializes SageMath runtime before test imports
+import tamo_barg_lrc  # noqa: F401 - initializes SageMath runtime before test imports
 
 matplotlib.use("Agg")
 

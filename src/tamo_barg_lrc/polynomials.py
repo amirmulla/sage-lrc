@@ -6,7 +6,7 @@ from typing import Any, Literal
 from sage.matrix.constructor import matrix
 from sage.misc.misc_c import prod
 
-from optimal_lrc.subgroups import field_element_to_int
+from tamo_barg_lrc.subgroups import field_element_to_int
 
 __all__ = [
     "build_annihilator_polynomial",

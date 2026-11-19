@@ -1,13 +1,13 @@
 # Agent 01 — Packaging, Tooling & Documentation Architect (Wave 1)
 
 ## Role & Mission
-You are the **Packaging, Tooling & Documentation Architect** in Wave 1 of the `optimal_lrc` refactoring swarm. First read [`prompts/shared_context_and_contracts.md`](./shared_context_and_contracts.md) completely.
+You are the **Packaging, Tooling & Documentation Architect** in Wave 1 of the `tamo_barg_lrc` refactoring swarm. First read [`prompts/shared_context_and_contracts.md`](./shared_context_and_contracts.md) completely.
 
 ## Exclusive File Ownership
 You may **ONLY** create or modify the following files:
 * `pyproject.toml` *(create)*
 * `.gitignore` *(create or update)*
-* `src/optimal_lrc/__init__.py` *(create)*
+* `src/tamo_barg_lrc/__init__.py` *(create)*
 * `README.md` *(replace)*
 
 Do **NOT** touch any other files in `src/`, `simulation/`, or `tests/`.
@@ -25,7 +25,7 @@ requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "optimal-lrc"
+name = "tamo-barg-lrc"
 version = "0.2.0"
 description = "Optimal Locally Recoverable Codes (single-set and two-set Tamo-Barg codes) in SageMath"
 readme = "README.md"
@@ -59,7 +59,7 @@ select = ["E", "F", "I", "B", "UP", "SIM"]
 ignore = []
 
 [tool.ruff.lint.per-file-ignores]
-"src/optimal_lrc/__init__.py" = ["F401"]
+"src/tamo_barg_lrc/__init__.py" = ["F401"]
 ```
 
 *(Note: SageMath itself is provided by the host `sage -python` runtime and must NOT be listed as a PyPI install dependency in `[project.dependencies]`, because monolithic `sage` is not a standard wheel.)*
@@ -75,19 +75,19 @@ Ensure `.gitignore` cleanly excludes build/test/simulation artifacts:
 
 ---
 
-### 3. `src/optimal_lrc/__init__.py`
-Implement `src/optimal_lrc/__init__.py` with:
+### 3. `src/tamo_barg_lrc/__init__.py`
+Implement `src/tamo_barg_lrc/__init__.py` with:
 1. One-time SageMath runtime initialization (`import sage.all  # noqa: F401`) so importing any submodule under `sage -python` initializes Sage's Cython coercion and category framework reliably.
-2. **PEP 562 lazy `__getattr__` exports** so Wave 1 submodules (`optimal_lrc.subgroups`, `optimal_lrc.polynomials`, `optimal_lrc.expander`) can be imported immediately during Wave 1 **before** Wave 2 creates `tamo_barg.py` and `tamo_barg_two_sets.py`, while `from optimal_lrc import TamoBargCode, TamoBargCodeTwoSets, ...` works seamlessly once Wave 2 completes!
+2. **PEP 562 lazy `__getattr__` exports** so Wave 1 submodules (`tamo_barg_lrc.subgroups`, `tamo_barg_lrc.polynomials`, `tamo_barg_lrc.expander`) can be imported immediately during Wave 1 **before** Wave 2 creates `tamo_barg.py` and `tamo_barg_two_sets.py`, while `from tamo_barg_lrc import TamoBargCode, TamoBargCodeTwoSets, ...` works seamlessly once Wave 2 completes!
 
 Exact export mapping required in `__all__` and `__getattr__`:
-* From `optimal_lrc.tamo_barg`:
+* From `tamo_barg_lrc.tamo_barg`:
   * `TamoBargCode`, `TamoBargVectorEncoder`, `TamoBargErasureDecoder`, `TamoBargErrorDecoder`
-* From `optimal_lrc.tamo_barg_two_sets`:
+* From `tamo_barg_lrc.tamo_barg_two_sets`:
   * `TamoBargCodeTwoSets`, `TamoBargTwoSetsVectorEncoder`, `TamoBargIterativeDecoder`, `TamoBargIterativeEEDecoder`, `TamoBargGlobalDecoder`, `TamoBargGlobalEEDecoder`, `TamoBargTwoStepDecoder`, `TamoBargTwoStepEEDecoder`
-* From `optimal_lrc.subgroups`:
+* From `tamo_barg_lrc.subgroups`:
   * `field_element_to_int`, `sort_field_elements`, `is_closed_under_addition`, `find_subspaces`, `find_additive_subgroups`, `find_additive_subgroups_bruteforce`, `list_multiplicative_subgroups`, `list_canonical_additive_subgroups`, `shift_additive_subgroup`, `list_subgroup_cosets`
-* From `optimal_lrc.expander`:
+* From `tamo_barg_lrc.expander`:
   * `create_bipartite_coset_graph`, `get_error_position_subgraph`, `compute_expansion_metrics`, `save_bipartite_graph_plot`
 
 Also implement `__dir__()` returning `sorted(list(globals().keys()) + __all__)` and `TYPE_CHECKING` imports for static type checkers.
@@ -107,12 +107,12 @@ Replace the minimal 4-line `README.md` with clear, concise documentation coverin
 4. **Running Tests & Simulations**:
    * `sage -python -m pytest -v`
    * CLI examples for `simulation/error_weight.py`, `simulation/two_step_decoding_sim.py`, `simulation/expander_sim.py`, `simulation/global_decoding_sim.py`, `simulation/iterative_decoding_sim.py`, `simulation/weight_distribution.py`, and `simulation/process_results.py`.
-5. **Package Architecture**: Brief module map of `src/optimal_lrc/`.
+5. **Package Architecture**: Brief module map of `src/tamo_barg_lrc/`.
 
 ---
 
 ## Acceptance Checklist
-- [ ] `ruff check pyproject.toml src/optimal_lrc/__init__.py` passes with zero warnings.
-- [ ] `ruff format --check src/optimal_lrc/__init__.py` passes.
+- [ ] `ruff check pyproject.toml src/tamo_barg_lrc/__init__.py` passes with zero warnings.
+- [ ] `ruff format --check src/tamo_barg_lrc/__init__.py` passes.
 - [ ] `sage -python -m pip install -e . --no-build-isolation` succeeds cleanly even before Wave 2 files exist.
-- [ ] No files outside `pyproject.toml`, `.gitignore`, `src/optimal_lrc/__init__.py`, and `README.md` were created or modified.
+- [ ] No files outside `pyproject.toml`, `.gitignore`, `src/tamo_barg_lrc/__init__.py`, and `README.md` were created or modified.

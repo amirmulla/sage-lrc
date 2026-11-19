@@ -1,4 +1,4 @@
-"""Unit and regression tests for optimal_lrc.expander bipartite coset graphs."""
+"""Unit and regression tests for tamo_barg_lrc.expander bipartite coset graphs."""
 
 from pathlib import Path
 
@@ -7,8 +7,8 @@ import networkx as nx
 import pytest
 from sage.rings.finite_rings.finite_field_constructor import GF
 
-from optimal_lrc import TamoBargCodeTwoSets
-from optimal_lrc.expander import (
+from tamo_barg_lrc import TamoBargCodeTwoSets
+from tamo_barg_lrc.expander import (
     compute_expansion_metrics,
     create_bipartite_coset_graph,
     get_error_position_subgraph,

@@ -8,7 +8,7 @@ from sage.modules.free_module import VectorSpace
 from sage.modules.free_module_element import vector
 from sage.rings.finite_rings.finite_field_constructor import GF
 
-from optimal_lrc import (
+from tamo_barg_lrc import (
     TamoBargCodeTwoSets,
     find_additive_subgroups,
 )

@@ -10,7 +10,7 @@ import networkx as nx
 import numpy as np
 from networkx.algorithms import cuts
 
-from optimal_lrc.subgroups import field_element_to_int
+from tamo_barg_lrc.subgroups import field_element_to_int
 
 matplotlib.use("Agg")
 

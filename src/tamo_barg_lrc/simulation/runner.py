@@ -17,9 +17,9 @@ from sage.modules.free_module import VectorSpace
 from sage.modules.free_module_element import zero_vector
 from sage.rings.finite_rings.finite_field_constructor import GF
 
-from optimal_lrc.expander import compute_expansion_metrics, save_bipartite_graph_plot
-from optimal_lrc.subgroups import SubgroupType, find_additive_subgroups
-from optimal_lrc.tamo_barg_two_sets import TamoBargCodeTwoSets
+from tamo_barg_lrc.expander import compute_expansion_metrics, save_bipartite_graph_plot
+from tamo_barg_lrc.subgroups import SubgroupType, find_additive_subgroups
+from tamo_barg_lrc.tamo_barg_two_sets import TamoBargCodeTwoSets
 
 VALID_DECODER_NAMES: tuple[str, ...] = (
     "GlobalDecoder",
@@ -650,7 +650,7 @@ def run_global_threshold_simulation(
     Counts a trial as successful when residual error weight after decoding does
     not exceed ``(target_distance - 1) // 2``, writing both summary success rates
     and ``*_err.csv`` residual error-weight histograms consumed by
-    :func:`optimal_lrc.simulation.postprocess.process_error_distribution_csv`.
+    :func:`tamo_barg_lrc.simulation.postprocess.process_error_distribution_csv`.
 
     Args:
         q: Finite field cardinality.

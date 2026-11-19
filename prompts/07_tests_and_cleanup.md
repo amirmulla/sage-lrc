@@ -1,7 +1,7 @@
 # Agent 07 — Pytest Regression Suite & Legacy Cleanup Specialist (Wave 3)
 
 ## Role & Mission
-You are the **Pytest Regression Suite & Legacy Cleanup Specialist** in Wave 3 of the `optimal_lrc` refactoring swarm. First read [`prompts/shared_context_and_contracts.md`](./shared_context_and_contracts.md) completely, inspect the legacy scripts in `tests/` and `src/` to preserve every meaningful scenario they exercised, and then build a comprehensive, deterministic `pytest` suite while removing all obsolete legacy files.
+You are the **Pytest Regression Suite & Legacy Cleanup Specialist** in Wave 3 of the `tamo_barg_lrc` refactoring swarm. First read [`prompts/shared_context_and_contracts.md`](./shared_context_and_contracts.md) completely, inspect the legacy scripts in `tests/` and `src/` to preserve every meaningful scenario they exercised, and then build a comprehensive, deterministic `pytest` suite while removing all obsolete legacy files.
 
 ## Exclusive File Ownership
 You may **ONLY** create, modify, or delete:
@@ -27,7 +27,7 @@ You may **ONLY** create, modify, or delete:
   * `tests/TamoBarg_Expander.py`
   * `tests/TamoBarg_Expansion_Measure.py`
 
-Do **NOT** touch `src/optimal_lrc/` or `simulation/`.
+Do **NOT** touch `src/tamo_barg_lrc/` or `simulation/`.
 
 ---
 

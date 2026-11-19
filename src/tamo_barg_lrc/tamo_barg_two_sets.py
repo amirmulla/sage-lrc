@@ -18,8 +18,8 @@ from sage.modules.free_module_element import vector
 from sage.rings.finite_rings.finite_field_constructor import GF
 from sage.rings.polynomial.polynomial_ring_constructor import PolynomialRing
 
-from optimal_lrc.expander import create_bipartite_coset_graph
-from optimal_lrc.polynomials import (
+from tamo_barg_lrc.expander import create_bipartite_coset_graph
+from tamo_barg_lrc.polynomials import (
     build_algebra_basis,
     build_encoding_basis,
     build_good_polynomial,
@@ -27,7 +27,7 @@ from optimal_lrc.polynomials import (
     interpolate_erasures,
     intersect_encoding_bases,
 )
-from optimal_lrc.subgroups import (
+from tamo_barg_lrc.subgroups import (
     SubgroupType,
     is_closed_under_addition,
     list_canonical_additive_subgroups,

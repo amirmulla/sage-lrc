@@ -1,11 +1,11 @@
-"""Unit, property, and regression tests for optimal_lrc.subgroups and polynomials."""
+"""Unit, property, and regression tests for tamo_barg_lrc.subgroups and polynomials."""
 
 import pytest
 from sage.rings.finite_rings.finite_field_constructor import GF
 from sage.rings.integer_ring import ZZ
 from sage.rings.polynomial.polynomial_ring_constructor import PolynomialRing
 
-from optimal_lrc.polynomials import (
+from tamo_barg_lrc.polynomials import (
     build_algebra_basis,
     build_annihilator_polynomial,
     build_encoding_basis,
@@ -14,7 +14,7 @@ from optimal_lrc.polynomials import (
     interpolate_erasures,
     intersect_encoding_bases,
 )
-from optimal_lrc.subgroups import (
+from tamo_barg_lrc.subgroups import (
     field_element_to_int,
     find_additive_subgroups,
     find_additive_subgroups_bruteforce,

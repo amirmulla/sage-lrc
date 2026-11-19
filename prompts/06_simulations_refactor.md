@@ -1,13 +1,13 @@
 # Agent 06 — Simulation Engine, Post-Processing & CLI Scripts Specialist (Wave 3)
 
 ## Role & Mission
-You are the **Simulation Engine, Post-Processing & CLI Scripts Specialist** in Wave 3 of the `optimal_lrc` refactoring swarm. First read [`prompts/shared_context_and_contracts.md`](./shared_context_and_contracts.md) completely, then inspect all 7 legacy scripts in `simulation/` plus the Wave 1–2 package modules in `src/optimal_lrc/`.
+You are the **Simulation Engine, Post-Processing & CLI Scripts Specialist** in Wave 3 of the `tamo_barg_lrc` refactoring swarm. First read [`prompts/shared_context_and_contracts.md`](./shared_context_and_contracts.md) completely, then inspect all 7 legacy scripts in `simulation/` plus the Wave 1–2 package modules in `src/tamo_barg_lrc/`.
 
 ## Exclusive File Ownership
 You may **ONLY** create, modify, or delete:
-* `src/optimal_lrc/simulation/__init__.py` *(create)*
-* `src/optimal_lrc/simulation/runner.py` *(create)*
-* `src/optimal_lrc/simulation/postprocess.py` *(create)*
+* `src/tamo_barg_lrc/simulation/__init__.py` *(create)*
+* `src/tamo_barg_lrc/simulation/runner.py` *(create)*
+* `src/tamo_barg_lrc/simulation/postprocess.py` *(create)*
 * `simulation/error_weight.py` *(refactor)*
 * `simulation/expander_sim.py` *(refactor)*
 * `simulation/global_decoding_sim.py` *(refactor)*
@@ -17,7 +17,7 @@ You may **ONLY** create, modify, or delete:
 * `simulation/weight_distribution.py` *(refactor)*
 * `simulation/proces_results.py` *(**DELETE** using `git rm -f` or `rm`)*
 
-Do **NOT** touch any files in `tests/` or core `src/optimal_lrc/*.py` modules.
+Do **NOT** touch any files in `tests/` or core `src/tamo_barg_lrc/*.py` modules.
 
 ---
 
@@ -34,7 +34,7 @@ Do **NOT** touch any files in `tests/` or core `src/optimal_lrc/*.py` modules.
 
 ## Detailed Implementation Specifications
 
-### 1. `src/optimal_lrc/simulation/runner.py`
+### 1. `src/tamo_barg_lrc/simulation/runner.py`
 Design clean, reusable data structures and simulation runners:
 
 * **`DecodeOutcome` (`@dataclass(frozen=True)`)**:
@@ -65,7 +65,7 @@ Design clean, reusable data structures and simulation runners:
     * `run_decoding_success_simulation(...)` (for `iterative_decoding_sim.py` and `two_step_decoding_sim.py`)
     * `run_weight_distribution_analysis(...)` (for `weight_distribution.py`)
 
-### 2. `src/optimal_lrc/simulation/postprocess.py`
+### 2. `src/tamo_barg_lrc/simulation/postprocess.py`
 * Implement `process_error_distribution_csv(err_csv_path: str | Path, design_distance: int, real_distance: int, sim_itr: int = 5000, threshold_pct: float = 99.0) -> dict[str, Any]` (**Fixes B14**):
   * Uses exact `(design_distance - 1) // 2` threshold.
   * Uses `with open(err_csv_path, newline="") as csvfile:`.
@@ -73,7 +73,7 @@ Design clean, reusable data structures and simulation runners:
 
 ### 3. Refactor All 7 CLI Scripts in `simulation/`
 Every script in `simulation/` MUST:
-1. Import directly from `optimal_lrc` and `optimal_lrc.simulation` (remove all `sys.path.append('./src')` hacks and wildcard `*` imports).
+1. Import directly from `tamo_barg_lrc` and `tamo_barg_lrc.simulation` (remove all `sys.path.append('./src')` hacks and wildcard `*` imports).
 2. Guard execution behind `def main(argv: Sequence[str] | None = None) -> None:` and `if __name__ == "__main__": main()`, so importing any script in tests has **zero side effects**!
 3. Provide `argparse.ArgumentParser` flags with defaults matching the original script parameters (`--q`, `--n`, `--k`, `--r`, `--local-min-dist`, `--subgroup-types`, `--decoder`, `--sim-itr`, `--max-err`, `--max-itr`, `--use-enc`, `--output-dir`, `--seed`, etc.) so both quick smoke runs (`--sim-itr 5 --max-err 3`) and full Monte Carlo runs work from the CLI without editing source code!
 4. Delete `simulation/proces_results.py` after creating `simulation/process_results.py`.
@@ -82,6 +82,6 @@ Every script in `simulation/` MUST:
 
 ## Acceptance Checklist
 - [ ] `simulation/proces_results.py` is deleted and `simulation/process_results.py` exists.
-- [ ] `ruff check src/optimal_lrc/simulation/ simulation/` and `ruff format --check src/optimal_lrc/simulation/ simulation/` pass with zero issues.
+- [ ] `ruff check src/tamo_barg_lrc/simulation/ simulation/` and `ruff format --check src/tamo_barg_lrc/simulation/ simulation/` pass with zero issues.
 - [ ] Every script in `simulation/` supports `--help` and runs cleanly with `--sim-itr 3 --max-err 2 --output-dir <tmp>` across all 6 decoder names without `ZeroDivisionError` (**B16**) or `TypeError` (**B15**).
 - [ ] Zero unclosed files or `matplotlib` figure leaks (**B18**).

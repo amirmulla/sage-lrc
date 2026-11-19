@@ -1,11 +1,11 @@
 # Agent 04 — Single-Set Tamo–Barg Code, Encoder & Decoders Specialist (Wave 2)
 
 ## Role & Mission
-You are the **Single-Set Tamo–Barg Code, Encoder & Decoders Specialist** in Wave 2 of the `optimal_lrc` refactoring swarm. First read [`prompts/shared_context_and_contracts.md`](./shared_context_and_contracts.md) completely, then inspect `src/TamoBarg.py`, `src/optimal_lrc/subgroups.py`, and `src/optimal_lrc/polynomials.py`.
+You are the **Single-Set Tamo–Barg Code, Encoder & Decoders Specialist** in Wave 2 of the `tamo_barg_lrc` refactoring swarm. First read [`prompts/shared_context_and_contracts.md`](./shared_context_and_contracts.md) completely, then inspect `src/TamoBarg.py`, `src/tamo_barg_lrc/subgroups.py`, and `src/tamo_barg_lrc/polynomials.py`.
 
 ## Exclusive File Ownership
 You may **ONLY** create or modify:
-* `src/optimal_lrc/tamo_barg.py`
+* `src/tamo_barg_lrc/tamo_barg.py`
 
 Do **NOT** delete legacy `src/TamoBarg.py` (Agent 07 deletes it in Wave 3) and do **NOT** touch any other files.
 
@@ -24,7 +24,7 @@ Do **NOT** delete legacy `src/TamoBarg.py` (Agent 07 deletes it in Wave 3) and d
 
 ---
 
-## Detailed Implementation Specifications: `src/optimal_lrc/tamo_barg.py`
+## Detailed Implementation Specifications: `src/tamo_barg_lrc/tamo_barg.py`
 
 Use explicit SageMath imports:
 ```python
@@ -43,7 +43,7 @@ from sage.modules.free_module_element import vector
 from sage.rings.finite_rings.finite_field_constructor import GF
 from sage.rings.polynomial.polynomial_ring_constructor import PolynomialRing
 
-from optimal_lrc.polynomials import (
+from tamo_barg_lrc.polynomials import (
     build_algebra_basis,
     build_annihilator_polynomial,
     build_encoding_basis,
@@ -51,7 +51,7 @@ from optimal_lrc.polynomials import (
     evaluate_message_polynomial,
     interpolate_erasures,
 )
-from optimal_lrc.subgroups import (
+from tamo_barg_lrc.subgroups import (
     list_canonical_additive_subgroups,
     list_multiplicative_subgroups,
     list_subgroup_cosets,
@@ -98,7 +98,7 @@ from optimal_lrc.subgroups import (
 ---
 
 ### 2. `TamoBargVectorEncoder(Encoder)`
-* Compute `_base_poly_ring = PolynomialRing(code.base_field(), "x")`, `_annihilator`, `_good_poly`, `_algebra_basis`, and full encoding basis via `optimal_lrc.polynomials`.
+* Compute `_base_poly_ring = PolynomialRing(code.base_field(), "x")`, `_annihilator`, `_good_poly`, `_algebra_basis`, and full encoding basis via `tamo_barg_lrc.polynomials`.
 * Store `self._max_dimension = len(full_enc_basis)` and slice `self._enc_basis = full_enc_basis[:code.dimension()]` (**Fixes B6**).
 * Implement:
   * `enc_basis(self) -> list[Any]`: return `self._enc_basis`
@@ -160,7 +160,7 @@ TamoBargCode._registered_decoders["ErrorDecoder"] = TamoBargErrorDecoder
 ---
 
 ## Acceptance Checklist
-- [ ] `ruff check src/optimal_lrc/tamo_barg.py` and `ruff format --check src/optimal_lrc/tamo_barg.py` pass cleanly.
+- [ ] `ruff check src/tamo_barg_lrc/tamo_barg.py` and `ruff format --check src/tamo_barg_lrc/tamo_barg.py` pass cleanly.
 - [ ] `C.decode_to_code(r, "ErrorDecoder")` works via SageMath's high-level `AbstractLinearCode.decode_to_code` API (verifying `input_space` fix **B5**).
 - [ ] Passing an immutable vector (`r.set_immutable()`) to `ErasureDecoder` and `ErrorDecoder` succeeds without mutating inputs (**B4**).
 - [ ] Invalid `length`, `dimension`, or subgroup parameters raise `ValueError` during `TamoBargCode(...)` construction (**B11**).

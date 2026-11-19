@@ -3,7 +3,7 @@
 import argparse
 from collections.abc import Sequence
 
-from optimal_lrc.simulation import run_weight_distribution_analysis
+from tamo_barg_lrc.simulation import run_weight_distribution_analysis
 
 
 def build_parser() -> argparse.ArgumentParser:

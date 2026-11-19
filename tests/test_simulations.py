@@ -1,4 +1,4 @@
-"""Unit, smoke, and bug-regression tests for optimal_lrc.simulation and CLI scripts."""
+"""Unit, smoke, and bug-regression tests for tamo_barg_lrc.simulation and CLI scripts."""
 
 import csv
 from pathlib import Path
@@ -18,8 +18,8 @@ from simulation import (
     weight_distribution,
 )
 
-from optimal_lrc import TamoBargCodeTwoSets
-from optimal_lrc.simulation import (
+from tamo_barg_lrc import TamoBargCodeTwoSets
+from tamo_barg_lrc.simulation import (
     VALID_DECODER_NAMES,
     DecodeOutcome,
     build_candidate_error_positions,

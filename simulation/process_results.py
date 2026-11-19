@@ -4,7 +4,7 @@ import argparse
 from collections.abc import Sequence
 from pathlib import Path
 
-from optimal_lrc.simulation import process_error_distribution_csv
+from tamo_barg_lrc.simulation import process_error_distribution_csv
 
 
 def build_parser() -> argparse.ArgumentParser:

@@ -3,7 +3,7 @@
 import argparse
 from collections.abc import Sequence
 
-from optimal_lrc.simulation import add_common_simulation_args, run_global_threshold_simulation
+from tamo_barg_lrc.simulation import add_common_simulation_args, run_global_threshold_simulation
 
 
 def build_parser() -> argparse.ArgumentParser:

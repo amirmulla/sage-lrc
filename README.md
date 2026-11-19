@@ -1,4 +1,4 @@
-# optimal_lrc
+# tamo_barg_lrc
 
 **Optimal Locally Recoverable Codes (LRCs)** in SageMath, implementing single-locality and two-set (multi-locality) Tamo–Barg algebraic constructions over finite fields $\mathbb{F}_q$, bipartite coset expander analysis, and iterative, global, and two-step error/erasure decoders.
 
@@ -6,12 +6,12 @@
 
 ## Overview
 
-`optimal_lrc` provides coding-theoretic constructions and decoding algorithms built on SageMath's finite-field, polynomial, and linear-code frameworks:
+`tamo_barg_lrc` provides coding-theoretic constructions and decoding algorithms built on SageMath's finite-field, polynomial, and linear-code frameworks:
 
 - **Single-Set Tamo–Barg Codes (`TamoBargCode`)**: Optimal $(n, k, r, \delta)$ LRCs constructed from additive or multiplicative subgroup coset partitions of $\mathbb{F}_q$ using annihilator ("good") polynomials, achieving the Singleton-like minimum distance bound
   $$d \ge n - k + 1 - \left(\left\lceil \frac{k}{r} \right\rceil - 1\right)(\delta - 1).$$
 - **Two-Set Tamo–Barg Codes (`TamoBargCodeTwoSets`)**: Multi-locality LRCs defined over two transverse coset partitions (`["add", "add"]`, `["mult", "mult"]`, `["add", "mult"]`, or `["mult", "add"]`) via degree-minimizing encoding-basis intersection.
-- **Bipartite Coset Expander Analysis (`optimal_lrc.expander`)**: Construction of the bipartite coset intersection graph, spectral gap and algebraic connectivity metrics, trapping/stopping subgraph extraction, and headless visualization.
+- **Bipartite Coset Expander Analysis (`tamo_barg_lrc.expander`)**: Construction of the bipartite coset intersection graph, spectral gap and algebraic connectivity metrics, trapping/stopping subgraph extraction, and headless visualization.
 - **Local, Iterative, Global & Two-Step Decoders**:
   - Single-set local Lagrange erasure recovery (`ErasureDecoder`) and syndrome-gated local Reed–Solomon Berlekamp–Welch decoding (`ErrorDecoder`).
   - Two-set iterative hard-decision (`IterativeDecoder`), iterative erasure-error with DUE marking (`IterativeErasureErrorDecoder`), global GRS (`GlobalDecoder`, `GlobalErasureErrorDecoder`), and hybrid iterative + global two-step decoders (`TwoStepsDecoder`, `TwoStepsErasureErrorDecoder`).
@@ -45,7 +45,7 @@ from sage.modules.free_module import VectorSpace
 from sage.modules.free_module_element import vector
 from sage.rings.finite_rings.finite_field_constructor import GF
 
-from optimal_lrc import TamoBargCode
+from tamo_barg_lrc import TamoBargCode
 
 F = GF(16, "a")
 code = TamoBargCode(
@@ -84,7 +84,7 @@ from sage.modules.free_module import VectorSpace
 from sage.modules.free_module_element import vector
 from sage.rings.finite_rings.finite_field_constructor import GF
 
-from optimal_lrc import TamoBargCodeTwoSets, compute_expansion_metrics
+from tamo_barg_lrc import TamoBargCodeTwoSets, compute_expansion_metrics
 
 F = GF(64, "a")
 
@@ -195,7 +195,7 @@ sage -python simulation/process_results.py --help
 ## Package Architecture
 
 ```text
-src/optimal_lrc/
+src/tamo_barg_lrc/
 ├── __init__.py             # SageMath initialization & PEP 562 lazy public API exports
 ├── subgroups.py            # Finite-field additive/multiplicative subgroups & coset partitions
 ├── polynomials.py          # Annihilator ("good") polynomials, encoding bases & interpolation

@@ -1,7 +1,7 @@
 """Simulation runners, decoder wrappers, and post-processing utilities."""
 
-from optimal_lrc.simulation.postprocess import process_error_distribution_csv
-from optimal_lrc.simulation.runner import (
+from tamo_barg_lrc.simulation.postprocess import process_error_distribution_csv
+from tamo_barg_lrc.simulation.runner import (
     VALID_DECODER_NAMES,
     DecodeOutcome,
     add_common_simulation_args,

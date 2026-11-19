@@ -7,7 +7,7 @@ from sage.modules.free_module_element import vector
 from sage.rings.finite_rings.finite_field_constructor import GF
 from sage.rings.rational_field import QQ
 
-from optimal_lrc import (
+from tamo_barg_lrc import (
     TamoBargCode,
     TamoBargErasureDecoder,
     TamoBargErrorDecoder,

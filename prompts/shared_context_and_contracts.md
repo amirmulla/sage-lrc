@@ -1,4 +1,4 @@
-# Shared Context, API Contracts & Defect Manifest (`optimal_lrc`)
+# Shared Context, API Contracts & Defect Manifest (`tamo_barg_lrc`)
 
 > **MANDATORY FOR ALL AGENTS**: Every agent in the refactoring swarm MUST adhere strictly to the file-ownership boundaries, module/class/function signatures, decoder return conventions, and coding standards specified in this document. Do **not** invent alternative module paths, rename registered decoder keys, or touch files outside your assigned scope.
 
@@ -7,9 +7,9 @@
 ## 1. Architectural Decisions (Non-Negotiable)
 
 1. **SageMath Backend Preserved**: Keep SageMath (`sage.coding`, `GF`, `PolynomialRing`, `matrix`, `vector`, `VectorSpace`, `GeneralizedReedSolomonCode`) as the algebraic and coding-theory foundation.
-   * Initialize `import sage.all  # noqa: F401` once inside `src/optimal_lrc/__init__.py` so `sage -python` initializes Sage's Cython coercion/category system cleanly.
+   * Initialize `import sage.all  # noqa: F401` once inside `src/tamo_barg_lrc/__init__.py` so `sage -python` initializes Sage's Cython coercion/category system cleanly.
    * **FORBIDDEN**: Wildcard imports (`from sage.all import *` or `from networkx.algorithms import *`) anywhere in `src/`, `simulation/`, or `tests/`. Always use explicit imports.
-2. **Clean `src/` Layout Package**: Migrate to `pyproject.toml` + `src/optimal_lrc/` with snake_case modules. Legacy PascalCase files (`src/AdditiveSubgroup.py`, `src/Expander.py`, `src/TamoBarg.py`, `src/TamoBargTwoSets.py`), `simulation/proces_results.py`, and ad-hoc `tests/*_Test.py` scripts are deleted in Wave 3 after replacements are complete—do **not** leave backward-compatibility shims in `src/`.
+2. **Clean `src/` Layout Package**: Migrate to `pyproject.toml` + `src/tamo_barg_lrc/` with snake_case modules. Legacy PascalCase files (`src/AdditiveSubgroup.py`, `src/Expander.py`, `src/TamoBarg.py`, `src/TamoBargTwoSets.py`), `simulation/proces_results.py`, and ad-hoc `tests/*_Test.py` scripts are deleted in Wave 3 after replacements are complete—do **not** leave backward-compatibility shims in `src/`.
 3. **Legacy Decoder Tuple Return Signatures Preserved**: Two-set iterative and two-step decoders MUST retain their historical tuple return formats (`(codeword, num_itr, ...)`), while single-set and global decoders return a single `Vector` (see Section 4).
 
 ---
@@ -20,12 +20,12 @@ Parallel agents within the same wave MUST ONLY create, modify, or delete files l
 
 | Agent | Wave | Exclusive File Ownership |
 | :--- | :---: | :--- |
-| **Agent 01** | 1 | `pyproject.toml`, `.gitignore`, `src/optimal_lrc/__init__.py`, `README.md` |
-| **Agent 02** | 1 | `src/optimal_lrc/subgroups.py`, `src/optimal_lrc/polynomials.py` |
-| **Agent 03** | 1 | `src/optimal_lrc/expander.py` |
-| **Agent 04** | 2 | `src/optimal_lrc/tamo_barg.py` |
-| **Agent 05** | 2 | `src/optimal_lrc/tamo_barg_two_sets.py` |
-| **Agent 06** | 3 | `src/optimal_lrc/simulation/__init__.py`, `src/optimal_lrc/simulation/runner.py`, `src/optimal_lrc/simulation/postprocess.py`, `simulation/error_weight.py`, `simulation/expander_sim.py`, `simulation/global_decoding_sim.py`, `simulation/iterative_decoding_sim.py`, `simulation/process_results.py`, `simulation/two_step_decoding_sim.py`, `simulation/weight_distribution.py`, **DELETE** `simulation/proces_results.py` |
+| **Agent 01** | 1 | `pyproject.toml`, `.gitignore`, `src/tamo_barg_lrc/__init__.py`, `README.md` |
+| **Agent 02** | 1 | `src/tamo_barg_lrc/subgroups.py`, `src/tamo_barg_lrc/polynomials.py` |
+| **Agent 03** | 1 | `src/tamo_barg_lrc/expander.py` |
+| **Agent 04** | 2 | `src/tamo_barg_lrc/tamo_barg.py` |
+| **Agent 05** | 2 | `src/tamo_barg_lrc/tamo_barg_two_sets.py` |
+| **Agent 06** | 3 | `src/tamo_barg_lrc/simulation/__init__.py`, `src/tamo_barg_lrc/simulation/runner.py`, `src/tamo_barg_lrc/simulation/postprocess.py`, `simulation/error_weight.py`, `simulation/expander_sim.py`, `simulation/global_decoding_sim.py`, `simulation/iterative_decoding_sim.py`, `simulation/process_results.py`, `simulation/two_step_decoding_sim.py`, `simulation/weight_distribution.py`, **DELETE** `simulation/proces_results.py` |
 | **Agent 07** | 3 | `tests/conftest.py`, `tests/test_subgroups.py`, `tests/test_expander.py`, `tests/test_tamo_barg.py`, `tests/test_tamo_barg_two_sets.py`, `tests/test_simulations.py`, `tests/Readme.md`, **DELETE** `src/AdditiveSubgroup.py`, `src/Expander.py`, `src/TamoBarg.py`, `src/TamoBargTwoSets.py`, `tests/Subgroups_Test.py`, `tests/TamoBargTwoSets_EE_Iterative_Test.py`, `tests/TamoBargTwoSets_Group_Test.py`, `tests/TamoBargTwoSets_Test.py`, `tests/TamoBarg_Erasure_Test.py`, `tests/TamoBarg_Error_Test.py`, `tests/TamoBarg_Expander.py`, `tests/TamoBarg_Expansion_Measure.py` |
 | **Agent 08** | 4 | Read-only QA, lint, pytest, CLI smoke verification & benchmarking (fixes routed via Orchestrator if needed) |
 
@@ -33,14 +33,14 @@ Parallel agents within the same wave MUST ONLY create, modify, or delete files l
 
 ## 3. Frozen Cross-Module API Signatures
 
-### `optimal_lrc/__init__.py` (Agent 01)
+### `tamo_barg_lrc/__init__.py` (Agent 01)
 Exports the primary public API (using direct imports once Wave 2 completes, or guarded/lazy `__getattr__` during Wave 1 so package installation works before Wave 2):
-* `TamoBargCode`, `TamoBargVectorEncoder`, `TamoBargErasureDecoder`, `TamoBargErrorDecoder` (from `optimal_lrc.tamo_barg`)
-* `TamoBargCodeTwoSets`, `TamoBargTwoSetsVectorEncoder`, `TamoBargIterativeDecoder`, `TamoBargIterativeEEDecoder`, `TamoBargGlobalDecoder`, `TamoBargGlobalEEDecoder`, `TamoBargTwoStepDecoder`, `TamoBargTwoStepEEDecoder` (from `optimal_lrc.tamo_barg_two_sets`)
-* `find_additive_subgroups`, `find_additive_subgroups_bruteforce`, `find_subspaces`, `is_closed_under_addition`, `list_multiplicative_subgroups`, `list_canonical_additive_subgroups`, `list_subgroup_cosets`, `shift_additive_subgroup` (from `optimal_lrc.subgroups`)
-* `create_bipartite_coset_graph`, `get_error_position_subgraph`, `compute_expansion_metrics`, `save_bipartite_graph_plot` (from `optimal_lrc.expander`)
+* `TamoBargCode`, `TamoBargVectorEncoder`, `TamoBargErasureDecoder`, `TamoBargErrorDecoder` (from `tamo_barg_lrc.tamo_barg`)
+* `TamoBargCodeTwoSets`, `TamoBargTwoSetsVectorEncoder`, `TamoBargIterativeDecoder`, `TamoBargIterativeEEDecoder`, `TamoBargGlobalDecoder`, `TamoBargGlobalEEDecoder`, `TamoBargTwoStepDecoder`, `TamoBargTwoStepEEDecoder` (from `tamo_barg_lrc.tamo_barg_two_sets`)
+* `find_additive_subgroups`, `find_additive_subgroups_bruteforce`, `find_subspaces`, `is_closed_under_addition`, `list_multiplicative_subgroups`, `list_canonical_additive_subgroups`, `list_subgroup_cosets`, `shift_additive_subgroup` (from `tamo_barg_lrc.subgroups`)
+* `create_bipartite_coset_graph`, `get_error_position_subgraph`, `compute_expansion_metrics`, `save_bipartite_graph_plot` (from `tamo_barg_lrc.expander`)
 
-### `optimal_lrc/subgroups.py` (Agent 02)
+### `tamo_barg_lrc/subgroups.py` (Agent 02)
 ```python
 from collections.abc import Iterable, Sequence
 from typing import Any, Literal
@@ -65,7 +65,7 @@ def list_subgroup_cosets(
 ) -> list[list[Any]]: ...
 ```
 
-### `optimal_lrc/polynomials.py` (Agent 02)
+### `tamo_barg_lrc/polynomials.py` (Agent 02)
 ```python
 from collections.abc import Sequence
 from typing import Any, Literal
@@ -103,7 +103,7 @@ def interpolate_erasures(
 ) -> list[Any]: ...
 ```
 
-### `optimal_lrc/expander.py` (Agent 03)
+### `tamo_barg_lrc/expander.py` (Agent 03)
 ```python
 from collections.abc import Sequence
 from pathlib import Path
@@ -132,7 +132,7 @@ def save_bipartite_graph_plot(
 ) -> None: ...
 ```
 
-### `optimal_lrc/tamo_barg.py` (Agent 04)
+### `tamo_barg_lrc/tamo_barg.py` (Agent 04)
 * `TamoBargCode(AbstractLinearCode)`:
   * `__init__(self, base_field, length: int, dimension: int, locality: int, local_minimum_distance: int = 2, sub_group_type: Literal["any", "mult", "add"] = "any")`
   * Methods: `partition() -> tuple[list[list[Any]], int]`, `sub_group() -> tuple[list[Any], str]`, `evaluation_points() -> list[Any]`, `locality() -> int`, `local_minimum_distance() -> int`, `max_dimension() -> int`, `minimum_distance() -> int`
@@ -141,7 +141,7 @@ def save_bipartite_graph_plot(
 * `TamoBargVectorEncoder(Encoder)`:
   * Methods: `enc_basis() -> list[Any]`, `enc_algebra_basis() -> list[Any]`, `enc_good_poly() -> Any`, `enc_poly(message) -> Any`, `max_dimension() -> int`, `generator_matrix()` (`@cached_method`)
 
-### `optimal_lrc/tamo_barg_two_sets.py` (Agent 05)
+### `tamo_barg_lrc/tamo_barg_two_sets.py` (Agent 05)
 * `TamoBargCodeTwoSets(AbstractLinearCode)`:
   * `__init__(self, base_field, length: int, dimension: int, locality: Sequence[int], local_minimum_distance: Sequence[int] | int = (2, 2), sub_group_type: Sequence[Literal["add", "mult"]] = ("add", "add"), shift_add: bool = False, subgroup: Sequence[Sequence[Any] | None] | None = None)`
   * Methods: `bipartite_graph() -> tuple[nx.MultiGraph, set[int], set[int]]`, `partition() -> tuple[list[list[list[Any]]], list[int]]`, `sub_group() -> tuple[list[list[Any]], list[str]]`, `evaluation_points_idx() -> list[list[list[int]]]`, `evaluation_points() -> list[Any]`, `locality() -> list[int]`, `num_of_sets() -> int`, `local_minimum_distance() -> list[int]`, `design_distance() -> int`, `max_dimension() -> int`, `max_rate() -> Any`, `minimum_distance_py() -> int`
@@ -194,7 +194,7 @@ Every agent implementing or calling a decoder MUST follow this exact contract:
 * **B12 (Agent 03)**: `Expander.py:13` converts field elements via `int(str(x))`, crashing on polynomial representations and producing out-of-bounds indices when $0 \notin \text{evaluation\_points}$. Store `coset_indices` directly on graph nodes and return those.
 * **B13 (Agents 02, 04, 05)**: Bitwise `&` precedence bug `j**i == 1 & first_identity_found == 1`, plus class/attribute typos `TamoBargIterariveDecoder`, `TamoBargIterariveEEDecoder`, `_parition_size`. Replace all boolean `&` with `and` and fix all names.
 * **B14 (Agent 06)**: `proces_results.py:34` computes `design_distnace - 1 // 2` (`15 - 0 = 15` instead of `(15 - 1) // 2 = 7`) due to `//` binding tighter than `-`. Fix to `(design_distance - 1) // 2` in `process_results.py`.
-* **B15 (Agent 06)**: Simulation scripts pass `max_num_of_itr` to `GlobalDecoder` / `GlobalErasureErrorDecoder` (`TypeError`) and fail to unpack `IterativeErasureErrorDecoder` / `GlobalDecoder` return values. Centralize instantiation and return unpacking in `optimal_lrc.simulation.runner`.
+* **B15 (Agent 06)**: Simulation scripts pass `max_num_of_itr` to `GlobalDecoder` / `GlobalErasureErrorDecoder` (`TypeError`) and fail to unpack `IterativeErasureErrorDecoder` / `GlobalDecoder` return values. Centralize instantiation and return unpacking in `tamo_barg_lrc.simulation.runner`.
 * **B16 (Agent 06)**: `print_freq = int(sim_itr / print_freq_factor)` raises `ZeroDivisionError` when `sim_itr < print_freq_factor`. Use `max(1, sim_itr // print_freq_factor)`.
 * **B17 (Agents 04 & 05)**: Bare `except:` clauses swallow `KeyboardInterrupt` and hide bugs. Catch `(DecodingError, ValueError)` explicitly where Sage decoders signal decoding failure.
 * **B18 (Agents 03, 06, 07)**: Leaked file handles (`open` without `with`), leaked `matplotlib` figures, duplicate CSV rows in `weight_distribution.py`, and blocking `plt.show()` in tests. Fix all resource management.

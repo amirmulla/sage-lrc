@@ -15,7 +15,7 @@ from sage.modules.free_module_element import vector
 from sage.rings.finite_rings.finite_field_constructor import GF
 from sage.rings.polynomial.polynomial_ring_constructor import PolynomialRing
 
-from optimal_lrc.polynomials import (
+from tamo_barg_lrc.polynomials import (
     build_algebra_basis,
     build_annihilator_polynomial,
     build_encoding_basis,
@@ -23,7 +23,7 @@ from optimal_lrc.polynomials import (
     evaluate_message_polynomial,
     interpolate_erasures,
 )
-from optimal_lrc.subgroups import (
+from tamo_barg_lrc.subgroups import (
     SubgroupType,
     list_canonical_additive_subgroups,
     list_multiplicative_subgroups,

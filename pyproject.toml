@@ -3,7 +3,7 @@ requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "optimal-lrc"
+name = "tamo-barg-lrc"
 version = "0.2.0"
 description = "Optimal Locally Recoverable Codes (single-set and two-set Tamo-Barg codes) in SageMath"
 readme = "README.md"
@@ -37,4 +37,4 @@ select = ["E", "F", "I", "B", "UP", "SIM"]
 ignore = []
 
 [tool.ruff.lint.per-file-ignores]
-"src/optimal_lrc/__init__.py" = ["F401"]
+"src/tamo_barg_lrc/__init__.py" = ["F401"]

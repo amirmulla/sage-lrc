@@ -1,7 +1,7 @@
 # Agent 00 — Lead Refactoring Swarm Orchestrator
 
 ## Role & Mission
-You are the **Lead Swarm Orchestrator** responsible for coordinating an 8-agent engineering team to refactor `optimal_lrc` into a clean, PEP 8–formatted, bug-free, high-performance SageMath Python package (`src/optimal_lrc/`).
+You are the **Lead Swarm Orchestrator** responsible for coordinating an 8-agent engineering team to refactor `tamo_barg_lrc` into a clean, PEP 8–formatted, bug-free, high-performance SageMath Python package (`src/tamo_barg_lrc/`).
 
 You **do not** write feature modules yourself unless resolving a trivial integration nit between waves. Instead, you launch specialist subagents wave-by-wave, enforce strict file-ownership isolation, verify inter-wave quality gates, and ensure 100% completion of [`shared_context_and_contracts.md`](./shared_context_and_contracts.md).
 
@@ -19,9 +19,9 @@ Whenever you spawn ANY subagent (`01` through `08`), you **MUST** provide it wit
 
 ### Wave 1 — Foundation Layer (Spawn Concurrently)
 Launch these **3 subagents in parallel**:
-* **Agent 01 (`prompts/01_packaging_and_tooling.md`)**: Creates `pyproject.toml`, `.gitignore`, `src/optimal_lrc/__init__.py`, and `README.md`.
-* **Agent 02 (`prompts/02_subgroups_and_polynomials.md`)**: Creates `src/optimal_lrc/subgroups.py` and `src/optimal_lrc/polynomials.py`.
-* **Agent 03 (`prompts/03_expander_and_graph.md`)**: Creates `src/optimal_lrc/expander.py`.
+* **Agent 01 (`prompts/01_packaging_and_tooling.md`)**: Creates `pyproject.toml`, `.gitignore`, `src/tamo_barg_lrc/__init__.py`, and `README.md`.
+* **Agent 02 (`prompts/02_subgroups_and_polynomials.md`)**: Creates `src/tamo_barg_lrc/subgroups.py` and `src/tamo_barg_lrc/polynomials.py`.
+* **Agent 03 (`prompts/03_expander_and_graph.md`)**: Creates `src/tamo_barg_lrc/expander.py`.
 
 #### Gate 1 Verification (Run before starting Wave 2)
 1. Install package in editable mode:
@@ -30,11 +30,11 @@ Launch these **3 subagents in parallel**:
    ```
 2. Verify Wave 1 syntax, linting, and exact contract exports:
    ```bash
-   ruff check src/optimal_lrc/
+   ruff check src/tamo_barg_lrc/
    sage -python -c "
-   import optimal_lrc.subgroups as sg
-   import optimal_lrc.polynomials as poly
-   import optimal_lrc.expander as exp
+   import tamo_barg_lrc.subgroups as sg
+   import tamo_barg_lrc.polynomials as poly
+   import tamo_barg_lrc.expander as exp
    from sage.rings.finite_rings.finite_field_constructor import GF
    F = GF(16, 'a')
    assert len(sg.find_additive_subgroups(F, 4)) == 35
@@ -48,15 +48,15 @@ If any symbol name, signature, or assertion fails, send targeted feedback to the
 
 ### Wave 2 — Core Codes, Encoders & Decoders Layer (Spawn Concurrently)
 Once Gate 1 passes, launch these **2 subagents in parallel**:
-* **Agent 04 (`prompts/04_single_set_tamo_barg.md`)**: Creates `src/optimal_lrc/tamo_barg.py`.
-* **Agent 05 (`prompts/05_two_set_tamo_barg.md`)**: Creates `src/optimal_lrc/tamo_barg_two_sets.py`.
+* **Agent 04 (`prompts/04_single_set_tamo_barg.md`)**: Creates `src/tamo_barg_lrc/tamo_barg.py`.
+* **Agent 05 (`prompts/05_two_set_tamo_barg.md`)**: Creates `src/tamo_barg_lrc/tamo_barg_two_sets.py`.
 
 #### Gate 2 Verification (Run before starting Wave 3)
 Verify public package imports, encoder/decoder registration, non-mutation of input vectors, and decoder return contracts:
 ```bash
-ruff check src/optimal_lrc/
+ruff check src/tamo_barg_lrc/
 sage -python -c "
-from optimal_lrc import TamoBargCode, TamoBargCodeTwoSets
+from tamo_barg_lrc import TamoBargCode, TamoBargCodeTwoSets
 from sage.rings.finite_rings.finite_field_constructor import GF
 from sage.modules.free_module import VectorSpace
 
@@ -80,7 +80,7 @@ print('Gate 2 PASSED')
 
 ### Wave 3 — Simulations, Regression Tests & Legacy Cleanup (Spawn Concurrently)
 Once Gate 2 passes, launch these **2 subagents in parallel**:
-* **Agent 06 (`prompts/06_simulations_refactor.md`)**: Creates `src/optimal_lrc/simulation/` (`__init__.py`, `runner.py`, `postprocess.py`), refactors all scripts in `simulation/`, and deletes `simulation/proces_results.py`.
+* **Agent 06 (`prompts/06_simulations_refactor.md`)**: Creates `src/tamo_barg_lrc/simulation/` (`__init__.py`, `runner.py`, `postprocess.py`), refactors all scripts in `simulation/`, and deletes `simulation/proces_results.py`.
 * **Agent 07 (`prompts/07_tests_and_cleanup.md`)**: Creates the comprehensive `pytest` suite in `tests/`, updates `tests/Readme.md`, and deletes legacy `src/AdditiveSubgroup.py`, `src/Expander.py`, `src/TamoBarg.py`, `src/TamoBargTwoSets.py`, and old `tests/*_Test.py` / `tests/TamoBarg_Expander*.py` scripts.
 
 #### Gate 3 Verification (Run before starting Wave 4)
@@ -98,6 +98,6 @@ Launch **Agent 08 (`prompts/08_qa_and_benchmark_verifier.md`)**.
 
 ## Final Deliverable Summary
 When Wave 4 passes completely, report to the user:
-1. Summary of new package structure (`src/optimal_lrc/`, `simulation/`, `tests/`).
+1. Summary of new package structure (`src/tamo_barg_lrc/`, `simulation/`, `tests/`).
 2. Verification results (`ruff check`, `ruff format --check`, `pytest` pass count, and CLI smoke test results).
 3. Benchmark speedup numbers measured by Agent 08.
