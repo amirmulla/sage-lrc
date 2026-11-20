@@ -3,8 +3,6 @@
 import argparse
 from collections.abc import Sequence
 
-from tamo_barg_lrc.simulation import run_weight_distribution_analysis
-
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the command-line argument parser for ``weight_distribution.py``."""
@@ -50,6 +48,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="./results",
         help="Output directory for weight distribution CSV and graph PNG.",
     )
+    parser.add_argument(
+        "--no-plot",
+        action="store_true",
+        default=False,
+        help="Skip rendering and saving the bipartite coset-graph PNG.",
+    )
     return parser
 
 
@@ -57,6 +61,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     """Parse CLI flags and execute the weight distribution computation."""
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    from tamo_barg_lrc.simulation import run_weight_distribution_analysis
 
     run_weight_distribution_analysis(
         q=args.q,
@@ -67,6 +73,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         sub_group_type=args.subgroup_types,
         add_idx=args.add_idx,
         output_dir=args.output_dir,
+        plot_graph=not args.no_plot,
     )
 
 

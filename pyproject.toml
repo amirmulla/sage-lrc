@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tamo-barg-lrc"
-version = "0.2.0"
+version = "0.2.1"
 description = "Optimal Locally Recoverable Codes (single-set and two-set Tamo-Barg codes) in SageMath"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -18,6 +18,10 @@ dependencies = [
 dev = [
     "pytest>=7.2",
     "ruff>=0.4",
+]
+sage = [
+    "passagemath-modules[m4rie]",
+    "passagemath-brial",
 ]
 
 [tool.setuptools.packages.find]

@@ -27,7 +27,12 @@ __all__ = [
 
 def _validate_finite_field(field: Any) -> None:
     """Raise ``ValueError`` if ``field`` is not a finite field."""
-    if not hasattr(field, "is_finite") or not field.is_finite():
+    if (
+        not hasattr(field, "is_finite")
+        or not field.is_finite()
+        or not hasattr(field, "is_field")
+        or not field.is_field()
+    ):
         raise ValueError("field must be a finite field")
 
 
@@ -114,6 +119,42 @@ def find_subspaces(dim: int, ambient_dim: int, base_field: Any) -> list[Any]:
     return list(ambient_space.subspaces(dim_int))
 
 
+def _find_additive_subgroups_gf2(field: Any, dim: int, m: int) -> list[list[Any]]:
+    """Enumerate all ``dim``-dimensional GF(2)-subspaces of ``GF(2^m)`` via bitmask RREF."""
+    alpha = field.gen()
+    int_to_elem = [field.zero()]
+    for i in range(m):
+        basis_elem = alpha**i
+        int_to_elem.extend([h + basis_elem for h in int_to_elem])
+
+    subgroups: list[list[int]] = []
+    for pivots in combinations(range(m), dim):
+        pivot_set = set(pivots)
+        free_per_row = [
+            [c for c in range(pivots[i] + 1, m) if c not in pivot_set] for i in range(dim)
+        ]
+        total_free = sum(len(fc) for fc in free_per_row)
+        base_masks = [1 << pivots[i] for i in range(dim)]
+        for bits in range(1 << total_free):
+            basis = list(base_masks)
+            shift = 0
+            for i, fc in enumerate(free_per_row):
+                b = basis[i]
+                for c in fc:
+                    if (bits >> shift) & 1:
+                        b |= 1 << c
+                    shift += 1
+                basis[i] = b
+            elems_int = [0]
+            for b in basis:
+                elems_int.extend([e ^ b for e in elems_int])
+            elems_int.sort()
+            subgroups.append(elems_int)
+
+    subgroups.sort()
+    return [[int_to_elem[idx] for idx in sg] for sg in subgroups]
+
+
 def find_additive_subgroups(field: Any, size: int) -> list[list[Any]]:
     """Find all additive subgroups of ``field`` of the given ``size``.
 
@@ -154,6 +195,13 @@ def find_additive_subgroups(field: Any, size: int) -> list[list[Any]]:
         raise ValueError(
             f"Additive subgroup size {size_int} must be a power of characteristic {p} dividing {q}"
         )
+
+    if dim == 0:
+        return [[field.zero()]]
+    if dim == m:
+        return [list_canonical_additive_subgroups(field)[q]]
+    if p == 2:
+        return _find_additive_subgroups_gf2(field, dim, m)
 
     alpha = field.gen()
     zero = field.zero()
@@ -277,7 +325,7 @@ def list_canonical_additive_subgroups(field: Any) -> dict[int, list[Any]]:
     for i in range(m):
         basis_elem = alpha**i
         current = [h + c * basis_elem for c in range(p) for h in current]
-        result[len(current)] = sort_field_elements(current)
+        result[len(current)] = current
 
     return result
 

@@ -3,11 +3,11 @@
 import argparse
 from collections.abc import Sequence
 
-from tamo_barg_lrc.simulation import add_common_simulation_args, run_decoding_success_simulation
-
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the command-line argument parser for ``two_step_decoding_sim.py``."""
+    from tamo_barg_lrc.simulation import add_common_simulation_args
+
     parser = argparse.ArgumentParser(
         description="Simulate two-step (iterative + global) decoding success probabilities."
     )
@@ -39,6 +39,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
 
+    from tamo_barg_lrc.simulation import run_decoding_success_simulation
+
     run_decoding_success_simulation(
         q=args.q,
         n=args.n,
@@ -55,6 +57,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         print_log=args.print_log,
         output_dir=args.output_dir,
         seed=args.seed,
+        plot_graph=not args.no_plot,
+        workers=args.workers,
+        stop_after_zero_runs=args.stop_after_zero_runs,
     )
 
 

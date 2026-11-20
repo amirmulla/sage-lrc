@@ -3,11 +3,11 @@
 import argparse
 from collections.abc import Sequence
 
-from tamo_barg_lrc.simulation import add_common_simulation_args, run_error_weight_simulation
-
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the command-line argument parser for ``expander_sim.py``."""
+    from tamo_barg_lrc.simulation import add_common_simulation_args
+
     parser = argparse.ArgumentParser(
         description="Simulate uniform or biased error distributions on two-set expander graphs."
     )
@@ -53,6 +53,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
 
+    from tamo_barg_lrc.simulation import run_error_weight_simulation
+
     run_error_weight_simulation(
         q=args.q,
         n=args.n,
@@ -71,6 +73,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         seed=args.seed,
         biased=bool(args.biased),
         error_boundary=args.error_boundary,
+        plot_graph=not args.no_plot,
+        workers=args.workers,
+        stop_after_zero_runs=args.stop_after_zero_runs,
     )
 
 

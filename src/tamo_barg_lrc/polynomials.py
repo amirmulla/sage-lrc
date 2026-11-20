@@ -3,6 +3,7 @@
 from collections.abc import Sequence
 from typing import Any, Literal
 
+import sage.rings.polynomial.laurent_polynomial_ring  # noqa: F401
 from sage.matrix.constructor import matrix
 from sage.misc.misc_c import prod
 
@@ -31,7 +32,80 @@ def build_annihilator_polynomial(poly_ring: Any, evaluation_points: Sequence[Any
     """
     x = poly_ring.gen()
     base_ring = poly_ring.base_ring()
+    n_pts = len(evaluation_points)
+    if hasattr(base_ring, "is_finite") and base_ring.is_finite():
+        q = int(base_ring.cardinality())
+        if n_pts == q:
+            pts = [base_ring(pt) for pt in evaluation_points]
+            if len(set(pts)) == q:
+                return x**q - x
+            return prod([x - pt for pt in pts], poly_ring.one())
+        if n_pts == q - 1:
+            pts = [base_ring(pt) for pt in evaluation_points]
+            unique_pts = set(pts)
+            if len(unique_pts) == q - 1 and base_ring.zero() not in unique_pts:
+                return x ** (q - 1) - poly_ring.one()
+            return prod([x - pt for pt in pts], poly_ring.one())
     return prod([x - base_ring(pt) for pt in evaluation_points], poly_ring.one())
+
+
+def _build_linearized_subspace_polynomial(poly_ring: Any, subgroup: Sequence[Any]) -> Any:
+    """Build ``prod_{h in H}(x - h)`` via linearized p-polynomial recurrence for GF(p)-subspaces."""
+    x = poly_ring.gen()
+    base_ring = poly_ring.base_ring()
+    sg_coerced = [base_ring(h) for h in subgroup]
+    if len(sg_coerced) == 1:
+        return x - sg_coerced[0]
+
+    if hasattr(base_ring, "is_finite") and base_ring.is_finite():
+        p = int(base_ring.characteristic())
+        zero = base_ring.zero()
+        sg_set = set(sg_coerced)
+        if zero in sg_set and len(sg_set) == len(sg_coerced):
+            span_list = [zero]
+            span_set = {zero}
+            basis_elems: list[Any] = []
+            is_subspace = True
+            for h in sg_coerced:
+                if h not in span_set:
+                    basis_elems.append(h)
+                    base_len = len(span_list)
+                    if base_len * p > len(sg_set):
+                        is_subspace = False
+                        break
+                    new_elems = [elem + c * h for c in range(1, p) for elem in span_list[:base_len]]
+                    if not all(e in sg_set for e in new_elems):
+                        is_subspace = False
+                        break
+                    span_list.extend(new_elems)
+                    span_set.update(new_elems)
+                    if len(span_set) == len(sg_set):
+                        break
+
+            if is_subspace and len(span_set) == len(sg_set):
+                # L_0(x) = x, L_{i+1}(x) = L_i(x)^p - L_i(b_i)^(p-1) * L_i(x)
+                # coeffs[k] holds the coefficient of x^(p^k)
+                coeffs = [base_ring.one()]
+                for b in basis_elems:
+                    val = zero
+                    bp = b
+                    for c in coeffs:
+                        val += c * bp
+                        bp = bp**p
+                    factor = val ** (p - 1)
+                    new_coeffs = [zero] * (len(coeffs) + 1)
+                    for k, c in enumerate(coeffs):
+                        new_coeffs[k + 1] += c**p
+                        new_coeffs[k] -= factor * c
+                    coeffs = new_coeffs
+
+                deg = p ** len(basis_elems)
+                dense = [zero] * (deg + 1)
+                for k, c in enumerate(coeffs):
+                    dense[p**k] = c
+                return poly_ring(dense)
+
+    return prod([x - h for h in sg_coerced], poly_ring.one())
 
 
 def build_good_polynomial(
@@ -62,14 +136,15 @@ def build_good_polynomial(
         raise ValueError("subgroup must be non-empty")
 
     x = poly_ring.gen()
-    base_ring = poly_ring.base_ring()
     if subgroup_type == "mult":
         good = x ** len(subgroup)
     else:
-        good = prod([x - base_ring(h) for h in subgroup], poly_ring.one())
+        good = _build_linearized_subspace_polynomial(poly_ring, subgroup)
 
     if annihilator is not None and good.degree() >= annihilator.degree():
-        good = good % annihilator
+        reduced = good % annihilator
+        if not reduced.is_zero():
+            good = reduced
     return good
 
 
@@ -193,41 +268,49 @@ def intersect_encoding_bases(
         max((int(p.degree()) + 1 for p in basis_b), default=0),
     )
 
-    mat_a = matrix(
+    mat_a_rev = matrix(
         base_field,
         len(basis_a),
         num_cols,
-        [p.padded_list(num_cols) for p in basis_a],
+        [p.padded_list(num_cols)[::-1] for p in basis_a],
     )
-    mat_b = matrix(
+    mat_b_rev = matrix(
         base_field,
         len(basis_b),
         num_cols,
-        [p.padded_list(num_cols) for p in basis_b],
+        [p.padded_list(num_cols)[::-1] for p in basis_b],
     )
 
-    ker = mat_a.stack(-mat_b).left_kernel_matrix()
-    if ker.nrows() == 0:
-        return []
-
-    basis_mat = ker.matrix_from_columns(list(range(mat_a.nrows()))) * mat_a
-    rev_cols = list(range(num_cols - 1, -1, -1))
-    rref_rev = basis_mat.matrix_from_columns(rev_cols).echelon_form()
+    if len(basis_a) + len(basis_b) > num_cols:
+        # Dual orthogonal method: U cap V = (U^perp + V^perp)^perp.
+        # right_kernel_matrix() returns rows already in RREF (reversed column order).
+        h_a = mat_a_rev.right_kernel_matrix()
+        h_b = mat_b_rev.right_kernel_matrix()
+        rref_rev = h_a.stack(h_b).right_kernel_matrix()
+    else:
+        ker = mat_a_rev.stack(-mat_b_rev).left_kernel_matrix()
+        if ker.nrows() == 0:
+            return []
+        basis_mat_rev = ker.matrix_from_columns(list(range(mat_a_rev.nrows()))) * mat_a_rev
+        rref_rev = basis_mat_rev.echelon_form()
 
     last_col = num_cols - 1
+    zero = base_field.zero()
     polys: list[Any] = []
-    for r_rev in rref_rev:
+    # rref_rev has leading pivots in strictly increasing column order (decreasing degree),
+    # so iterating in reverse yields polynomials in strictly ascending degree.
+    for row_idx in range(rref_rev.nrows() - 1, -1, -1):
+        r_rev = rref_rev[row_idx]
         nz = r_rev.nonzero_positions()
         if not nz:
             continue
         deg = last_col - nz[0]
         if deg < n_len:
-            coeffs: list[Any] = [0] * (deg + 1)
+            coeffs: list[Any] = [zero] * (deg + 1)
             for idx in nz:
                 coeffs[last_col - idx] = r_rev[idx]
             polys.append(poly_ring(coeffs))
 
-    polys.sort(key=lambda p: p.degree())
     return polys
 
 
@@ -280,11 +363,14 @@ def interpolate_erasures(
     if len(values) != n or len(erasure_mask) != n:
         raise ValueError("eval_points, values, and erasure_mask must all have the same length")
 
-    known_pts: list[tuple[Any, Any]] = []
+    base_ring = poly_ring.base_ring()
+    xs: list[Any] = []
+    ys: list[Any] = []
     erased_indices: list[int] = []
     for i in range(n):
         if int(erasure_mask[i]) == 0:
-            known_pts.append((eval_points[i], values[i]))
+            xs.append(base_ring(eval_points[i]))
+            ys.append(base_ring(values[i]))
         else:
             erased_indices.append(i)
 
@@ -292,7 +378,24 @@ def interpolate_erasures(
     if not erased_indices:
         return out
 
-    interp_poly = poly_ring.lagrange_polynomial(known_pts)
+    s = len(xs)
+    if s == 0:
+        raise ValueError("Cannot interpolate erasures with no known evaluation points")
+
+    # 1D in-place Newton divided-difference table: dd[j] becomes f[x_0, ..., x_j].
+    dd = list(ys)
+    try:
+        for j in range(1, s):
+            for i in range(s - 1, j - 1, -1):
+                dd[i] = (dd[i] - dd[i - 1]) / (xs[i] - xs[i - j])
+    except ZeroDivisionError as exc:
+        raise ValueError("eval_points must be distinct at known positions") from exc
+
+    # Direct Horner evaluation in Newton basis at each erased point (no monomial expansion).
     for idx in erased_indices:
-        out[idx] = interp_poly(eval_points[idx])
+        z = base_ring(eval_points[idx])
+        acc = dd[s - 1]
+        for i in range(s - 2, -1, -1):
+            acc = acc * (z - xs[i]) + dd[i]
+        out[idx] = acc
     return out

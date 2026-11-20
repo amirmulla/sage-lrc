@@ -1,6 +1,5 @@
 """Single-set Tamo-Barg optimal locally recoverable codes, encoders, and decoders."""
 
-from copy import copy
 from typing import Any, Literal
 
 from sage.categories.cartesian_product import cartesian_product
@@ -11,17 +10,14 @@ from sage.coding.linear_code import AbstractLinearCode
 from sage.matrix.constructor import matrix
 from sage.misc.cachefunc import cached_method
 from sage.modules.free_module import VectorSpace
-from sage.modules.free_module_element import vector
 from sage.rings.finite_rings.finite_field_constructor import GF
 from sage.rings.polynomial.polynomial_ring_constructor import PolynomialRing
 
 from tamo_barg_lrc.polynomials import (
     build_algebra_basis,
-    build_annihilator_polynomial,
     build_encoding_basis,
     build_good_polynomial,
     evaluate_message_polynomial,
-    interpolate_erasures,
 )
 from tamo_barg_lrc.subgroups import (
     SubgroupType,
@@ -49,6 +45,161 @@ def _coerce_int(value: Any, name: str) -> int:
     if int_val != value:
         raise ValueError(f"{name} must be an integer, got {value!r}")
     return int_val
+
+
+def _make_poly_ring(base_field: Any) -> Any:
+    """Construct ``base_field['x']`` preferring the generic implementation."""
+    try:
+        return PolynomialRing(base_field, "x", implementation="generic")
+    except (TypeError, ValueError):
+        return PolynomialRing(base_field, "x")
+
+
+def _build_coset_alignments(
+    sub_group: list[Any],
+    sub_group_type: SubgroupType,
+    partition: list[list[Any]],
+) -> tuple[list[list[int]], list[list[int]], bool]:
+    """Precompute index permutations aligning each coset to ``sub_group`` order.
+
+    For each coset ``A_c``, ``aligned[l] = A_c[perms[c][l]]`` corresponds to
+    ``sub_group[l]`` under the coset's affine map (translation for ``"add"``
+    or scaling for ``"mult"``), and ``inv_perms[c]`` is the inverse map.
+    """
+    m = len(sub_group)
+    h_index = {h: idx for idx, h in enumerate(sub_group)}
+    identity = list(range(m))
+    perms: list[list[int]] = []
+    inv_perms: list[list[int]] = []
+    all_identity = True
+
+    for coset in partition:
+        beta = coset[0]
+        perm = [0] * m
+        if sub_group_type == "add":
+            for pos, elem in enumerate(coset):
+                perm[h_index[elem - beta]] = pos
+        else:
+            inv_beta = ~beta
+            for pos, elem in enumerate(coset):
+                perm[h_index[elem * inv_beta]] = pos
+
+        inv_perm = [0] * m
+        for l_idx, pos in enumerate(perm):
+            inv_perm[pos] = l_idx
+
+        if perm != identity:
+            all_identity = False
+        perms.append(perm)
+        inv_perms.append(inv_perm)
+
+    return perms, inv_perms, all_identity
+
+
+def _build_canonical_rs_pcm_rows(
+    base_field: Any, eval_points: list[Any], num_checks: int
+) -> tuple[list[list[Any]], list[Any]]:
+    """Build generalized Vandermonde parity-check rows for ``RS(eval_points, m - num_checks)``.
+
+    Returns ``(h0_rows, inv_v)`` where ``h0_rows[u][l] = v_l * eval_points[l]^u``
+    with ``v_l = (prod_{j != l} (eval_points[l] - eval_points[j]))^(-1)`` and
+    ``inv_v[l] = 1 / v_l``.
+    """
+    m = len(eval_points)
+    one = base_field.one()
+    inv_v: list[Any] = []
+    v_row: list[Any] = []
+    for l_idx in range(m):
+        prod_diff = one
+        a_l = eval_points[l_idx]
+        for j_idx in range(m):
+            if j_idx != l_idx:
+                prod_diff *= a_l - eval_points[j_idx]
+        inv_v.append(prod_diff)
+        v_row.append(~prod_diff)
+
+    rows: list[list[Any]] = [v_row]
+    for _ in range(1, num_checks):
+        prev = rows[-1]
+        rows.append([prev[l_idx] * eval_points[l_idx] for l_idx in range(m)])
+    return rows, inv_v
+
+
+def _solve_erasure_system(
+    h0_rows: list[list[Any]],
+    inv_v: list[Any],
+    aligned: list[Any],
+    erased: list[int],
+    zero: Any,
+) -> None:
+    """Recover ``erased`` positions of ``aligned`` in place via ``H_{0, E} x_E = -H_{0, K} x_K``."""
+    m = len(aligned)
+    num_erased = len(erased)
+
+    if num_erased == 1:
+        e0 = erased[0]
+        row0 = h0_rows[0]
+        acc = zero
+        for j in range(m):
+            if j != e0:
+                acc += row0[j] * aligned[j]
+        aligned[e0] = (-acc) * inv_v[e0]
+        return
+
+    if num_erased == 2:
+        e0, e1 = erased[0], erased[1]
+        row0 = h0_rows[0]
+        row1 = h0_rows[1]
+        s0 = zero
+        s1 = zero
+        for j in range(m):
+            if j != e0 and j != e1:
+                xj = aligned[j]
+                s0 += row0[j] * xj
+                s1 += row1[j] * xj
+        s0 = -s0
+        s1 = -s1
+        a00 = row0[e0]
+        a01 = row0[e1]
+        a10 = row1[e0]
+        a11 = row1[e1]
+        inv_det = ~(a00 * a11 - a01 * a10)
+        aligned[e0] = (s0 * a11 - a01 * s1) * inv_det
+        aligned[e1] = (a00 * s1 - s0 * a10) * inv_det
+        return
+
+    erased_set = set(erased)
+    aug: list[list[Any]] = []
+    for u in range(num_erased):
+        row_u = h0_rows[u]
+        rhs = zero
+        for j in range(m):
+            if j not in erased_set:
+                rhs += row_u[j] * aligned[j]
+        aug_row = [row_u[idx] for idx in erased]
+        aug_row.append(-rhs)
+        aug.append(aug_row)
+
+    for col in range(num_erased):
+        piv = col
+        while aug[piv][col].is_zero():
+            piv += 1
+        if piv != col:
+            aug[col], aug[piv] = aug[piv], aug[col]
+        piv_row = aug[col]
+        inv_p = ~piv_row[col]
+        for j in range(col, num_erased + 1):
+            piv_row[j] *= inv_p
+        for r_idx in range(num_erased):
+            if r_idx != col:
+                target_row = aug[r_idx]
+                factor = target_row[col]
+                if not factor.is_zero():
+                    for j in range(col, num_erased + 1):
+                        target_row[j] -= factor * piv_row[j]
+
+    for u, idx in enumerate(erased):
+        aligned[idx] = aug[u][num_erased]
 
 
 class TamoBargCode(AbstractLinearCode):
@@ -112,22 +263,33 @@ class TamoBargCode(AbstractLinearCode):
             raise ValueError(f"Code length {n_int} must be divisible by coset size {coset_size}")
 
         q = int(base_field.cardinality())
-        mult_subgroups = list_multiplicative_subgroups(base_field)
-        add_subgroups = list_canonical_additive_subgroups(base_field)
 
         if sub_group_type == "any":
-            if coset_size in mult_subgroups and n_int <= q - 1:
+            if n_int <= q - 1 and (q - 1) % coset_size == 0:
+                mult_subgroups = list_multiplicative_subgroups(base_field)
                 self._sub_group = mult_subgroups[coset_size]
                 self._sub_group_type: SubgroupType = "mult"
-            elif coset_size in add_subgroups and n_int <= q:
-                self._sub_group = add_subgroups[coset_size]
-                self._sub_group_type = "add"
+            elif n_int <= q and q % coset_size == 0:
+                add_subgroups = list_canonical_additive_subgroups(base_field)
+                if coset_size in add_subgroups:
+                    self._sub_group = add_subgroups[coset_size]
+                    self._sub_group_type = "add"
+                else:
+                    raise ValueError(
+                        f"No multiplicative or additive subgroup of size {coset_size} in "
+                        f"{base_field} can support code length {n_int}"
+                    )
             else:
                 raise ValueError(
                     f"No multiplicative or additive subgroup of size {coset_size} in "
                     f"{base_field} can support code length {n_int}"
                 )
         elif sub_group_type == "mult":
+            if (q - 1) % coset_size != 0:
+                raise ValueError(
+                    f"No multiplicative subgroup of size {coset_size} exists in {base_field}"
+                )
+            mult_subgroups = list_multiplicative_subgroups(base_field)
             if coset_size not in mult_subgroups:
                 raise ValueError(
                     f"No multiplicative subgroup of size {coset_size} exists in {base_field}"
@@ -140,6 +302,11 @@ class TamoBargCode(AbstractLinearCode):
             self._sub_group = mult_subgroups[coset_size]
             self._sub_group_type = "mult"
         else:
+            if q % coset_size != 0:
+                raise ValueError(
+                    f"No canonical additive subgroup of size {coset_size} exists in {base_field}"
+                )
+            add_subgroups = list_canonical_additive_subgroups(base_field)
             if coset_size not in add_subgroups:
                 raise ValueError(
                     f"No canonical additive subgroup of size {coset_size} exists in {base_field}"
@@ -168,6 +335,7 @@ class TamoBargCode(AbstractLinearCode):
 
         super().__init__(base_field, n_int, "VectorEncoder", "ErasureDecoder")
         self._dimension = k_int
+        self._cached_hash: int | None = None
 
     def __eq__(self, other: object) -> bool:
         """Check structural equality between two single-set Tamo-Barg codes."""
@@ -183,16 +351,18 @@ class TamoBargCode(AbstractLinearCode):
 
     def __hash__(self) -> int:
         """Return a hash consistent with ``__eq__``."""
-        return hash(
-            (
-                self.base_field(),
-                int(self.length()),
-                self._dimension,
-                self._locality,
-                self._local_minimum_distance,
-                tuple(self._evaluation_points),
+        if self._cached_hash is None:
+            self._cached_hash = hash(
+                (
+                    self.base_field(),
+                    int(self.length()),
+                    self._dimension,
+                    self._locality,
+                    self._local_minimum_distance,
+                    tuple(self._evaluation_points),
+                )
             )
-        )
+        return self._cached_hash
 
     def _repr_(self) -> str:
         """Return SageMath string representation of the code."""
@@ -225,8 +395,9 @@ class TamoBargCode(AbstractLinearCode):
         """Return the maximum supported dimension ``partition_size * locality``."""
         return self._partition_size * self._locality
 
-    def minimum_distance(self) -> int:
+    def minimum_distance(self, algorithm: Any = None) -> int:
         """Return the Singleton-like optimal LRC minimum distance of the code."""
+        del algorithm
         num_blocks = (self._dimension + self._locality - 1) // self._locality
         return (
             int(self.length())
@@ -253,28 +424,22 @@ class TamoBargVectorEncoder(Encoder):
         sub_group, sub_group_type = code.sub_group()
         self._sub_group = sub_group
         self._sub_group_type = sub_group_type
-        self._base_poly_ring = PolynomialRing(code.base_field(), "x")
-        self._annihilator = build_annihilator_polynomial(
-            self._base_poly_ring, code.evaluation_points()
-        )
+        self._base_poly_ring = _make_poly_ring(code.base_field())
         if sub_group_type not in ("add", "mult"):
             raise ValueError(f"sub_group_type must be 'add' or 'mult', got {sub_group_type!r}")
         self._good_poly = build_good_polynomial(
             self._base_poly_ring,
             self._sub_group,
             sub_group_type,
-            annihilator=self._annihilator,
         )
         self._algebra_basis = build_algebra_basis(
             self._good_poly,
             self._partition_size,
-            annihilator=self._annihilator,
         )
         full_enc_basis = build_encoding_basis(
             self._base_poly_ring,
             self._algebra_basis,
             code.locality(),
-            annihilator=self._annihilator,
         )
         self._max_dimension = len(full_enc_basis)
         if code.dimension() > self._max_dimension:
@@ -326,19 +491,73 @@ class TamoBargVectorEncoder(Encoder):
     def generator_matrix(self) -> Any:
         """Return the immutable ``k x n`` generator matrix over ``GF(q)``."""
         code = self.code()
+        base_field = code.base_field()
+        k = code.dimension()
+        n = int(code.length())
+        r = code.locality()
+        s = self._partition_size
+        m = n // s
         alphas = code.evaluation_points()
-        g = matrix(
-            code.base_field(),
-            code.dimension(),
-            code.length(),
-            [[poly(alpha) for alpha in alphas] for poly in self._enc_basis],
-        )
+        one = base_field.one()
+        zero = base_field.zero()
+
+        max_i = min(r, k)
+        alpha_powers: list[list[Any]] = [[one] * n]
+        for _ in range(1, max_i):
+            prev = alpha_powers[-1]
+            alpha_powers.append([prev[col] * alphas[col] for col in range(n)])
+
+        num_blocks = (k + r - 1) // r
+        g_vals = [
+            coset[0] ** m if self._sub_group_type == "mult" else self._good_poly(coset[0])
+            for coset in self._partition
+        ]
+        g_powers: list[list[Any]] = [[one] * s]
+        for _ in range(1, num_blocks):
+            prev_g = g_powers[-1]
+            g_powers.append([prev_g[c] * g_vals[c] for c in range(s)])
+
+        rows: list[list[Any]] = []
+        for j in range(num_blocks):
+            block_rows = min(r, k - j * r)
+            if j == 0:
+                rows.extend(alpha_powers[:block_rows])
+            else:
+                g_j = g_powers[j]
+                zero_block = [zero] * m
+                for i in range(block_rows):
+                    ap = alpha_powers[i]
+                    row: list[Any] = []
+                    for c in range(s):
+                        gc = g_j[c]
+                        if gc.is_zero():
+                            row.extend(zero_block)
+                        else:
+                            base = c * m
+                            row.extend(ap[base + l_idx] * gc for l_idx in range(m))
+                    rows.append(row)
+
+        g = matrix(base_field, k, n, rows)
         g.set_immutable()
         return g
 
+    def encode(self, word: Any) -> Any:
+        """Encode a message vector into a codeword using dense matrix multiplication.
+
+        Uses a 1-row matrix product ``(matrix(F, 1, k, list(word)) * G).row(0)``
+        so extension-field matrices dispatch to M4RIE instead of Sage's generic
+        row-unpacking ``Matrix._vector_times_matrix_`` fallback.
+        """
+        message_space = self.message_space()
+        if word not in message_space:
+            raise ValueError(f"The value to encode must be in {message_space}")
+        code = self.code()
+        g = self.generator_matrix()
+        return (matrix(code.base_field(), 1, code.dimension(), list(word)) * g).row(0)
+
 
 class TamoBargErasureDecoder(Decoder):
-    """Local coset Lagrange-interpolation erasure decoder for :class:`TamoBargCode`."""
+    """Local coset parity-check erasure decoder for :class:`TamoBargCode`."""
 
     def __init__(self, code: TamoBargCode) -> None:
         """Initialize the local erasure decoder.
@@ -346,10 +565,20 @@ class TamoBargErasureDecoder(Decoder):
         Args:
             code: Associated :class:`TamoBargCode` instance.
         """
-        input_space = cartesian_product([code.ambient_space(), VectorSpace(GF(2), code.length())])
+        ambient_space = code.ambient_space()
+        input_space = cartesian_product([ambient_space, VectorSpace(GF(2), code.length())])
         super().__init__(code, input_space, "VectorEncoder")
-        self._poly_ring = PolynomialRing(code.base_field(), "x")
+        self._ambient_space = ambient_space
         self._coset_size = code.locality() + code.local_minimum_distance() - 1
+        sub_group, sub_group_type = code.sub_group()
+        partition, partition_size = code.partition()
+        self._partition_size = partition_size
+        self._coset_perms, self._coset_inv_perms, self._all_identity = _build_coset_alignments(
+            sub_group, sub_group_type, partition
+        )
+        self._h0_rows, self._inv_v = _build_canonical_rs_pcm_rows(
+            code.base_field(), sub_group, code.local_minimum_distance() - 1
+        )
 
     def __eq__(self, other: object) -> bool:
         """Check equality between two :class:`TamoBargErasureDecoder` instances."""
@@ -379,7 +608,7 @@ class TamoBargErasureDecoder(Decoder):
         """
         code = self.code()
         base_field = code.base_field()
-        n = code.length()
+        n = int(code.length())
         word, erasure_vector = word_and_erasure_vector
         if len(word) != n or len(erasure_vector) != n:
             raise ValueError(
@@ -387,47 +616,87 @@ class TamoBargErasureDecoder(Decoder):
                 f"got {len(word)} and {len(erasure_vector)}"
             )
 
+        if getattr(word, "base_ring", lambda: None)() is base_field:
+            word_list = list(word)
+        else:
+            word_list = [base_field(x) for x in word]
+
         m = self._coset_size
         d_local = code.local_minimum_distance()
-        partition, partition_size = code.partition()
+        zero = base_field.zero()
+        h0_rows = self._h0_rows
+        inv_v = self._inv_v
+        all_identity = self._all_identity
         corrected_flat: list[Any] = []
 
-        for i in range(partition_size):
-            offset = i * m
-            word_slice = [base_field(word[j]) for j in range(offset, offset + m)]
-            era_slice = [int(erasure_vector[j]) for j in range(offset, offset + m)]
-            era_wt = sum(1 for b in era_slice if b != 0)
+        for c in range(self._partition_size):
+            offset = c * m
+            erased_local = [l_idx for l_idx in range(m) if int(erasure_vector[offset + l_idx]) != 0]
+            era_wt = len(erased_local)
             if era_wt >= d_local:
                 raise DecodingError("Too many erasures in the received word")
-            if era_wt > 0:
-                word_slice = interpolate_erasures(
-                    self._poly_ring, partition[i], word_slice, era_slice
-                )
-            corrected_flat.extend(word_slice)
+            if era_wt == 0:
+                corrected_flat.extend(word_list[offset : offset + m])
+            elif all_identity:
+                aligned = word_list[offset : offset + m]
+                _solve_erasure_system(h0_rows, inv_v, aligned, erased_local, zero)
+                corrected_flat.extend(aligned)
+            else:
+                perm = self._coset_perms[c]
+                inv_perm = self._coset_inv_perms[c]
+                aligned = [word_list[offset + idx] for idx in perm]
+                erased_aligned = [inv_perm[idx] for idx in erased_local]
+                _solve_erasure_system(h0_rows, inv_v, aligned, erased_aligned, zero)
+                corrected_flat.extend(aligned[idx] for idx in inv_perm)
 
-        return vector(base_field, corrected_flat)
+        return self._ambient_space(corrected_flat)
 
 
 class TamoBargErrorDecoder(Decoder):
-    """Local GRS Berlekamp-Welch error decoder for :class:`TamoBargCode`."""
+    """Local GRS error decoder for :class:`TamoBargCode`."""
 
     def __init__(self, code: TamoBargCode) -> None:
-        """Initialize the local error decoder and precompute coset GRS decoders and PCMs.
+        """Initialize the local error decoder with a shared canonical GRS code, PCM, and decoder.
 
         Args:
             code: Associated :class:`TamoBargCode` instance.
         """
-        super().__init__(code, code.ambient_space(), "VectorEncoder")
-        self._coset_size = code.locality() + code.local_minimum_distance() - 1
-        partition, _ = code.partition()
-        self._local_codes: list[Any] = []
-        self._local_decoders: list[Any] = []
-        self._local_parity_checks: list[Any] = []
-        for coset in partition:
-            grs = GeneralizedReedSolomonCode(evaluation_points=coset, dimension=code.locality())
-            self._local_codes.append(grs)
-            self._local_decoders.append(grs.decoder("BerlekampWelch"))
-            self._local_parity_checks.append(grs.parity_check_matrix())
+        ambient_space = code.ambient_space()
+        super().__init__(code, ambient_space, "VectorEncoder")
+        base_field = code.base_field()
+        m = code.locality() + code.local_minimum_distance() - 1
+        sub_group, sub_group_type = code.sub_group()
+        partition, partition_size = code.partition()
+
+        self._ambient_space = ambient_space
+        self._local_space = VectorSpace(base_field, m)
+        self._coset_size = m
+        self._partition_size = partition_size
+        self._num_checks = code.local_minimum_distance() - 1
+        self._max_correctable_errors = self._num_checks // 2
+        self._coset_perms, self._coset_inv_perms, self._all_identity = _build_coset_alignments(
+            sub_group, sub_group_type, partition
+        )
+
+        # Pick a canonical coset avoiding 0 when possible so KeyEquationSyndrome is eligible.
+        if sub_group_type == "add" and partition_size >= 2:
+            beta_ref = partition[1][0]
+            canonical_pts = [beta_ref + h for h in sub_group]
+        else:
+            canonical_pts = list(sub_group)
+
+        self._local_code = GeneralizedReedSolomonCode(
+            evaluation_points=canonical_pts,
+            dimension=code.locality(),
+        )
+        self._local_pcm = self._local_code.parity_check_matrix()
+        if base_field.zero() not in canonical_pts:
+            try:
+                self._local_decoder = self._local_code.decoder("KeyEquationSyndrome")
+            except (KeyError, ValueError):
+                self._local_decoder = self._local_code.decoder("BerlekampWelch")
+        else:
+            self._local_decoder = self._local_code.decoder("BerlekampWelch")
 
     def __eq__(self, other: object) -> bool:
         """Check equality between two :class:`TamoBargErrorDecoder` instances."""
@@ -442,7 +711,7 @@ class TamoBargErrorDecoder(Decoder):
         return f"Error Decoder for {self.code()}"
 
     def decode_to_code(self, r: Any) -> Any:
-        """Locally decode each coset via syndrome check + Berlekamp-Welch without mutation.
+        """Locally decode each coset via batched syndrome check + shared GRS decoder.
 
         Args:
             r: Received vector in ``GF(q)^n``.
@@ -455,27 +724,64 @@ class TamoBargErrorDecoder(Decoder):
         """
         code = self.code()
         base_field = code.base_field()
-        n = code.length()
+        n = int(code.length())
         if len(r) != n:
             raise ValueError(f"Received word must have length {n}, got {len(r)}")
 
-        r_vec = copy(vector(base_field, r))
+        if getattr(r, "base_ring", lambda: None)() is base_field:
+            r_list = list(r)
+        else:
+            r_list = [base_field(x) for x in r]
+
         m = self._coset_size
+        s = self._partition_size
+        all_identity = self._all_identity
+        if all_identity:
+            r_mat = matrix(
+                base_field,
+                m,
+                s,
+                [r_list[c * m + l_idx] for l_idx in range(m) for c in range(s)],
+            )
+        else:
+            perms = self._coset_perms
+            r_mat = matrix(
+                base_field,
+                m,
+                s,
+                [r_list[c * m + perms[c][l_idx]] for l_idx in range(m) for c in range(s)],
+            )
+
+        syndromes = self._local_pcm * r_mat
+        num_checks = self._num_checks
+        local_space = self._local_space
+        local_decoder = self._local_decoder
+        can_correct = self._max_correctable_errors > 0
         corrected: list[Any] = []
 
-        for i in range(len(self._local_decoders)):
-            offset = i * m
-            local_vec = vector(base_field, r_vec[offset : offset + m])
-            if (self._local_parity_checks[i] * local_vec).is_zero():
-                corrected.extend(local_vec)
-            else:
-                try:
-                    local_corr = self._local_decoders[i].decode_to_code(local_vec)
-                    corrected.extend(local_corr)
-                except (DecodingError, ValueError):
-                    corrected.extend(local_vec)
+        for c in range(s):
+            offset = c * m
+            if all(syndromes[row, c].is_zero() for row in range(num_checks)) or not can_correct:
+                corrected.extend(r_list[offset : offset + m])
+                continue
 
-        return vector(base_field, corrected)
+            if all_identity:
+                local_vec = local_space(r_list[offset : offset + m])
+            else:
+                perm = self._coset_perms[c]
+                local_vec = local_space([r_list[offset + idx] for idx in perm])
+
+            try:
+                local_corr = local_decoder.decode_to_code(local_vec)
+                if all_identity:
+                    corrected.extend(local_corr)
+                else:
+                    inv_perm = self._coset_inv_perms[c]
+                    corrected.extend(local_corr[idx] for idx in inv_perm)
+            except (DecodingError, ValueError):
+                corrected.extend(r_list[offset : offset + m])
+
+        return self._ambient_space(corrected)
 
 
 TamoBargCode._registered_encoders["VectorEncoder"] = TamoBargVectorEncoder

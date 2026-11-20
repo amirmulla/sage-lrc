@@ -1,5 +1,6 @@
 # results directory
 results/
+reports/perf_analysis/scratch/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

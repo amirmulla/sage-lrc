@@ -3,11 +3,11 @@
 import argparse
 from collections.abc import Sequence
 
-from tamo_barg_lrc.simulation import add_common_simulation_args, run_global_threshold_simulation
-
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the command-line argument parser for ``global_decoding_sim.py``."""
+    from tamo_barg_lrc.simulation import add_common_simulation_args
+
     parser = argparse.ArgumentParser(
         description=(
             "Simulate iterative decoding followed by global unique-decoding threshold "
@@ -61,6 +61,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     else:
         decoder_name = "IterativeDecoder"
 
+    from tamo_barg_lrc.simulation import run_global_threshold_simulation
+
     run_global_threshold_simulation(
         q=args.q,
         n=args.n,
@@ -78,6 +80,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         print_log=args.print_log,
         output_dir=args.output_dir,
         seed=args.seed,
+        plot_graph=not args.no_plot,
+        workers=args.workers,
+        stop_after_zero_runs=args.stop_after_zero_runs,
     )
 
 

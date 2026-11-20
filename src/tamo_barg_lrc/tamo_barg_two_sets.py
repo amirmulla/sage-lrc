@@ -3,18 +3,20 @@
 import numbers
 from collections.abc import Sequence
 from copy import copy
+from functools import lru_cache
 from typing import Any, Literal
 
 import networkx as nx
+import numpy as np
 from sage.categories.cartesian_product import cartesian_product
 from sage.coding.decoder import Decoder, DecodingError
 from sage.coding.encoder import Encoder
 from sage.coding.grs_code import GeneralizedReedSolomonCode
 from sage.coding.linear_code import AbstractLinearCode
 from sage.matrix.constructor import matrix
+from sage.matrix.matrix_space import MatrixSpace
 from sage.misc.cachefunc import cached_method
 from sage.modules.free_module import VectorSpace
-from sage.modules.free_module_element import vector
 from sage.rings.finite_rings.finite_field_constructor import GF
 from sage.rings.polynomial.polynomial_ring_constructor import PolynomialRing
 
@@ -48,6 +50,8 @@ __all__ = [
     "TamoBargTwoStepEEDecoder",
 ]
 
+_POPCOUNT_LUT8 = np.array([bin(i).count("1") for i in range(256)], dtype=np.uint8)
+
 
 def _is_int_like(value: Any) -> bool:
     """Return True if ``value`` is an integer (Python ``int`` or Sage ``Integer``), not ``bool``."""
@@ -73,6 +77,233 @@ def _safe_parity_check_matrix(grs_code: GeneralizedReedSolomonCode) -> Any:
     return grs_code.parity_check_matrix()
 
 
+@lru_cache(maxsize=16)
+def _gf2m_tables(field: Any) -> tuple[np.ndarray, np.ndarray, list[Any]]:
+    """Build and cache ``(exp_tbl, log_tbl, int_to_elem)`` for ``GF(2^m)`` (``q <= 65536``)."""
+    q = int(field.cardinality())
+    dtype = np.uint8 if q <= 256 else np.uint16
+    exp_tbl = np.zeros(2 * (q - 1), dtype=dtype)
+    log_tbl = np.full(q, -1, dtype=np.int32)
+    int_to_elem: list[Any] = [field.zero()] * q
+    if q == 2:
+        exp_tbl[0] = 1
+        exp_tbl[1] = 1
+        log_tbl[1] = 0
+        int_to_elem[1] = field.one()
+        return exp_tbl, log_tbl, int_to_elem
+
+    gen = field.multiplicative_generator()
+    cur = field.one()
+    for i in range(q - 1):
+        val = int(cur.to_integer())
+        exp_tbl[i] = val
+        exp_tbl[i + (q - 1)] = val
+        log_tbl[val] = i
+        int_to_elem[val] = cur
+        cur *= gen
+    return exp_tbl, log_tbl, int_to_elem
+
+
+def _gf2m_min_distance(gen_mat: Any, field: Any, k: int, n: int, stop_bound: int) -> int:
+    """Compute exact minimum Hamming distance over ``GF(2^m)`` (``q <= 65536``) via NumPy LUTs."""
+    q = int(field.cardinality())
+    exp_tbl, log_tbl, _ = _gf2m_tables(field)
+    dtype = np.uint8 if q <= 256 else np.uint16
+    if q == 2:
+        g_int = np.array([[int(gen_mat[i, j]) for j in range(n)] for i in range(k)], dtype=dtype)
+    else:
+        g_int = np.array(
+            [[int(gen_mat[i, j].to_integer()) for j in range(n)] for i in range(k)],
+            dtype=dtype,
+        )
+
+    # Check the highest-degree basis row first (tail_dim == 0) before allocating LUT tables.
+    min_wt = n
+    wt_last = int(np.count_nonzero(g_int[k - 1]))
+    if 0 < wt_last < min_wt:
+        min_wt = wt_last
+        if min_wt <= stop_bound:
+            return min_wt
+    if k == 1:
+        return min_wt
+
+    # Precompute scalar multiples mul_rows[r, s] = s * G[r] when table fits comfortably in RAM.
+    if k * q * n <= 16_000_000:
+        s_logs = log_tbl[np.arange(1, q)]
+        mul_rows = np.zeros((k, q, n), dtype=dtype)
+        for r_idx in range(k):
+            nz = g_int[r_idx] != 0
+            if np.any(nz):
+                g_logs = log_tbl[g_int[r_idx, nz]]
+                mul_rows[r_idx][1:, nz] = exp_tbl[s_logs[:, None] + g_logs[None, :]]
+
+        # Bit-sliced uint64 path for n <= 64 and q <= 256 with k >= 3 (batches 2 inner coords).
+        if n <= 64 and q <= 256 and k >= 3:
+            m_bits = int(field.degree())
+            bit_shifts = np.uint64(1) << np.arange(n, dtype=np.uint64)
+            mul_bits = np.zeros((k, q, m_bits), dtype=np.uint64)
+            for b in range(m_bits):
+                plane = ((mul_rows >> b) & 1).astype(np.uint64)
+                mul_bits[:, :, b] = (plane * bit_shifts[None, None, :]).sum(axis=2, dtype=np.uint64)
+
+            def _min_popcount(planes: np.ndarray) -> int:
+                nz_masks = np.bitwise_or.reduce(planes, axis=1)
+                as_bytes = nz_masks.view(np.uint8).reshape(-1, 8)
+                return int(_POPCOUNT_LUT8[as_bytes].sum(axis=1).min())
+
+            pair_planes = (mul_bits[k - 2, :, None, :] ^ mul_bits[k - 1, None, :, :]).reshape(
+                q * q, m_bits
+            )
+
+            for lead in range(k - 2, -1, -1):
+                lead_bits = mul_bits[lead, 1]
+                tail_dim = k - lead - 1
+                if tail_dim == 1:
+                    mw = _min_popcount(lead_bits[None, :] ^ mul_bits[lead + 1])
+                    if 0 < mw < min_wt:
+                        min_wt = mw
+                        if min_wt <= stop_bound:
+                            return min_wt
+                else:
+                    outer_dim = tail_dim - 2
+                    if outer_dim == 0:
+                        mw = _min_popcount(lead_bits[None, :] ^ pair_planes)
+                        if 0 < mw < min_wt:
+                            min_wt = mw
+                            if min_wt <= stop_bound:
+                                return min_wt
+                    else:
+                        digits = [0] * outer_dim
+                        acc = lead_bits.copy()
+                        for _ in range(q**outer_dim):
+                            mw = _min_popcount(acc[None, :] ^ pair_planes)
+                            if 0 < mw < min_wt:
+                                min_wt = mw
+                                if min_wt <= stop_bound:
+                                    return min_wt
+                            for pos in range(outer_dim - 1, -1, -1):
+                                old_d = digits[pos]
+                                new_d = old_d + 1
+                                row_idx = lead + 1 + pos
+                                if new_d < q:
+                                    acc ^= mul_bits[row_idx, old_d] ^ mul_bits[row_idx, new_d]
+                                    digits[pos] = new_d
+                                    break
+                                acc ^= mul_bits[row_idx, old_d]
+                                digits[pos] = 0
+            return min_wt
+
+        # General uint8/uint16 batched XOR over the innermost coordinate.
+        last_mults = mul_rows[k - 1]
+        for lead in range(k - 2, -1, -1):
+            lead_row = g_int[lead]
+            tail_dim = k - lead - 1
+            if tail_dim == 1:
+                mw = int(np.count_nonzero(lead_row[None, :] ^ last_mults, axis=1).min())
+                if 0 < mw < min_wt:
+                    min_wt = mw
+                    if min_wt <= stop_bound:
+                        return min_wt
+            else:
+                outer_dim = tail_dim - 1
+                digits = [0] * outer_dim
+                acc = lead_row.copy()
+                for _ in range(q**outer_dim):
+                    mw = int(np.count_nonzero(acc[None, :] ^ last_mults, axis=1).min())
+                    if 0 < mw < min_wt:
+                        min_wt = mw
+                        if min_wt <= stop_bound:
+                            return min_wt
+                    for pos in range(outer_dim - 1, -1, -1):
+                        old_d = digits[pos]
+                        new_d = old_d + 1
+                        row_idx = lead + 1 + pos
+                        if new_d < q:
+                            acc ^= mul_rows[row_idx, old_d] ^ mul_rows[row_idx, new_d]
+                            digits[pos] = new_d
+                            break
+                        acc ^= mul_rows[row_idx, old_d]
+                        digits[pos] = 0
+        return min_wt
+
+    # Chunked fallback for very large GF(2^m) (e.g., q = 65536) where full mul_rows is huge.
+    chunk_size = 256
+    last_row = g_int[k - 1]
+    last_nz = last_row != 0
+    last_g_logs = log_tbl[last_row[last_nz]]
+    row_nz = [g_int[r] != 0 for r in range(k)]
+    row_g_logs = [log_tbl[g_int[r, row_nz[r]]] for r in range(k)]
+
+    def _scale_row(row_idx: int, scalar: int) -> np.ndarray:
+        out = np.zeros(n, dtype=dtype)
+        if scalar != 0 and np.any(row_nz[row_idx]):
+            out[row_nz[row_idx]] = exp_tbl[log_tbl[scalar] + row_g_logs[row_idx]]
+        return out
+
+    def _min_wt_with_last(acc_row: np.ndarray) -> int:
+        best = int(np.count_nonzero(acc_row))
+        if not np.any(last_nz):
+            return best
+        for start in range(1, q, chunk_size):
+            end = min(start + chunk_size, q)
+            s_logs_c = log_tbl[np.arange(start, end)]
+            batch = np.broadcast_to(acc_row, (end - start, n)).copy()
+            batch[:, last_nz] ^= exp_tbl[s_logs_c[:, None] + last_g_logs[None, :]]
+            mw_c = int(np.count_nonzero(batch, axis=1).min())
+            if 0 < mw_c < best:
+                best = mw_c
+                if best <= stop_bound:
+                    return best
+        return best
+
+    for lead in range(k - 2, -1, -1):
+        lead_row = g_int[lead]
+        tail_dim = k - lead - 1
+        if tail_dim == 1:
+            mw = _min_wt_with_last(lead_row)
+            if 0 < mw < min_wt:
+                min_wt = mw
+                if min_wt <= stop_bound:
+                    return min_wt
+        else:
+            outer_dim = tail_dim - 1
+            digits = [0] * outer_dim
+            acc = lead_row.copy()
+            for _ in range(q**outer_dim):
+                mw = _min_wt_with_last(acc)
+                if 0 < mw < min_wt:
+                    min_wt = mw
+                    if min_wt <= stop_bound:
+                        return min_wt
+                for pos in range(outer_dim - 1, -1, -1):
+                    old_d = digits[pos]
+                    new_d = old_d + 1
+                    row_idx = lead + 1 + pos
+                    if new_d < q:
+                        acc ^= _scale_row(row_idx, old_d) ^ _scale_row(row_idx, new_d)
+                        digits[pos] = new_d
+                        break
+                    acc ^= _scale_row(row_idx, old_d)
+                    digits[pos] = 0
+    return min_wt
+
+
+def _partition_is_syndrome_clean(
+    part_idx: int,
+    work: Any,
+    evalpts_idx: list[list[list[int]]],
+    local_parity_checks: list[list[Any]],
+    local_vector_space: Any,
+) -> bool:
+    """Return True if every coset in partition ``part_idx`` has zero local syndrome."""
+    pcms = local_parity_checks[part_idx]
+    for j, idxs in enumerate(evalpts_idx[part_idx]):
+        local_vec = local_vector_space([work[idx] for idx in idxs])
+        if not (pcms[j] * local_vec).is_zero():
+            return False
+    return True
+
+
 class TamoBargCodeTwoSets(AbstractLinearCode):
     """Optimal locally recoverable Tamo-Barg code with two disjoint-repair-set partitions.
 
@@ -88,7 +319,7 @@ class TamoBargCodeTwoSets(AbstractLinearCode):
         self,
         base_field: Any,
         length: int,
-        dimension: int,
+        dimension: int | None,
         locality: Sequence[int],
         local_minimum_distance: Sequence[int] | int = (2, 2),
         sub_group_type: Sequence[Literal["add", "mult"]] = ("add", "add"),
@@ -100,7 +331,8 @@ class TamoBargCodeTwoSets(AbstractLinearCode):
         Args:
             base_field: Finite field ``GF(q)`` over which the code is defined.
             length: Codeword length ``n``.
-            dimension: Message dimension ``k`` (``1 <= k <= max_dimension()``).
+            dimension: Message dimension ``k`` (``1 <= k <= max_dimension()``), or
+                ``None`` to default to ``max_dimension()`` without a probe code.
             locality: Two-element sequence ``[r_0, r_1]`` of partition localities.
             local_minimum_distance: Scalar ``d`` (expanded to ``[d, d]``) or
                 two-element sequence ``[d_0, d_1]`` of local minimum distances (``>= 2``).
@@ -121,10 +353,10 @@ class TamoBargCodeTwoSets(AbstractLinearCode):
 
         if not _is_int_like(length) or int(length) < 1:
             raise ValueError(f"length must be a positive integer, got {length!r}")
-        if not _is_int_like(dimension) or int(dimension) < 1:
-            raise ValueError(f"dimension must be a positive integer, got {dimension!r}")
+        if dimension is not None and (not _is_int_like(dimension) or int(dimension) < 1):
+            raise ValueError(f"dimension must be a positive integer or None, got {dimension!r}")
         length_int = int(length)
-        dim_int = int(dimension)
+        dim_int: int | None = None if dimension is None else int(dimension)
 
         if not isinstance(locality, (list, tuple)) or len(locality) != 2:
             raise ValueError("locality must be a 2-element sequence [r1, r2]")
@@ -282,9 +514,11 @@ class TamoBargCodeTwoSets(AbstractLinearCode):
             [[pt_to_idx[h] for h in coset] for coset in part] for part in self._partition
         ]
 
-        self._G, self._G_L, self._G_R = create_bipartite_coset_graph(
-            self._partition, self._evaluation_points_idx, self._evaluation_points
-        )
+        self._bipartite_graph_cache: tuple[nx.MultiGraph, set[int], set[int]] | None = None
+        self._hash_cache: int | None = None
+        self._design_distance_cache: int | None = None
+        self._default_encoder_cache: Encoder | None = None
+        self._encoder_cache: dict[tuple[Any, ...], Encoder] = {}
 
         self._registered_encoders = self._registered_encoders.copy()
         self._registered_decoders = self._registered_decoders.copy()
@@ -292,10 +526,31 @@ class TamoBargCodeTwoSets(AbstractLinearCode):
         self._dimension = dim_int
 
         max_dim = self.max_dimension()
-        if self._dimension < 1 or self._dimension > max_dim:
-            raise ValueError(
-                f"Code dimension ({self._dimension}) must satisfy 1 <= dimension <= {max_dim}"
-            )
+        if dim_int is None:
+            self._dimension = max_dim
+        elif dim_int < 1 or dim_int > max_dim:
+            raise ValueError(f"Code dimension ({dim_int}) must satisfy 1 <= dimension <= {max_dim}")
+
+    def encoder(self, encoder_name: str | None = None, *args: Any, **kwargs: Any) -> Encoder:
+        """Return a cached encoder, unifying ``encoder()`` and ``encoder('VectorEncoder')``."""
+        if not self._default_encoder_name:
+            raise NotImplementedError("No encoder implemented for this code.")
+        name = self._default_encoder_name if encoder_name is None else encoder_name
+        if not args and not kwargs and name == self._default_encoder_name:
+            if self._default_encoder_cache is None:
+                enc_cls = self._registered_encoders[name]
+                self._default_encoder_cache = enc_cls(self)
+            return self._default_encoder_cache
+        key = (name, args, tuple(sorted(kwargs.items())))
+        if key not in self._encoder_cache:
+            if name not in self._registered_encoders:
+                raise ValueError(
+                    f"There is no Encoder named '{name}'. The known Encoders are: "
+                    f"{self.encoders_available()}"
+                )
+            enc_cls = self._registered_encoders[name]
+            self._encoder_cache[key] = enc_cls(self, *args, **kwargs)
+        return self._encoder_cache[key]
 
     def __eq__(self, other: object) -> bool:
         """Return True if ``other`` is a two-set Tamo-Barg code with identical parameters."""
@@ -311,18 +566,20 @@ class TamoBargCodeTwoSets(AbstractLinearCode):
 
     def __hash__(self) -> int:
         """Return a deterministic hash consistent with ``__eq__``."""
-        sgs, sg_types = self.sub_group()
-        return hash(
-            (
-                self.base_field(),
-                self.length(),
-                self.dimension(),
-                tuple(self.locality()),
-                tuple(self.local_minimum_distance()),
-                tuple(tuple(sg) for sg in sgs),
-                tuple(sg_types),
+        if self._hash_cache is None:
+            sgs, sg_types = self.sub_group()
+            self._hash_cache = hash(
+                (
+                    self.base_field(),
+                    self.length(),
+                    self.dimension(),
+                    tuple(self.locality()),
+                    tuple(self.local_minimum_distance()),
+                    tuple(tuple(sg) for sg in sgs),
+                    tuple(sg_types),
+                )
             )
-        )
+        return self._hash_cache
 
     def _repr_(self) -> str:
         """Return a human-readable summary of the code parameters."""
@@ -333,7 +590,11 @@ class TamoBargCodeTwoSets(AbstractLinearCode):
 
     def bipartite_graph(self) -> tuple[nx.MultiGraph, set[int], set[int]]:
         """Return ``(graph, left_nodes, right_nodes)`` for the two coset partitions."""
-        return self._G, self._G_L, self._G_R
+        if self._bipartite_graph_cache is None:
+            self._bipartite_graph_cache = create_bipartite_coset_graph(
+                self._partition, self._evaluation_points_idx, self._evaluation_points
+            )
+        return self._bipartite_graph_cache
 
     def partition(self) -> tuple[list[list[list[Any]]], list[int]]:
         """Return ``(partitions, partition_sizes)`` across both recovery sets."""
@@ -365,9 +626,11 @@ class TamoBargCodeTwoSets(AbstractLinearCode):
 
     def design_distance(self) -> int:
         """Return the polynomial degree-bound design distance ``n - max_deg``."""
-        basis = self.encoder().enc_basis()
-        max_degree = max((int(poly.degree()) for poly in basis), default=0)
-        return int(self.length()) - max_degree
+        if self._design_distance_cache is None:
+            basis = self.encoder().enc_basis()
+            max_degree = int(basis[-1].degree()) if basis else 0
+            self._design_distance_cache = int(self.length()) - max_degree
+        return self._design_distance_cache
 
     def max_dimension(self) -> int:
         """Return the maximum message dimension supported by the intersection basis."""
@@ -382,7 +645,9 @@ class TamoBargCodeTwoSets(AbstractLinearCode):
 
         Iterates only over projectively normalized non-zero message vectors in
         ``GF(q)^k`` whose first non-zero coordinate equals ``1``, achieving a
-        ``(q - 1)x`` speedup over full message-space enumeration.
+        ``(q - 1)x`` speedup over full message-space enumeration. Uses vectorized
+        NumPy ``GF(2^m)`` LUTs with reverse ``lead`` order and ``design_distance()``
+        early termination when ``char(F) == 2`` and ``q <= 65536``.
 
         Returns:
             Exact minimum Hamming distance of the code.
@@ -390,17 +655,22 @@ class TamoBargCodeTwoSets(AbstractLinearCode):
         gen_mat = self.generator_matrix()
         field = self.base_field()
         k = int(self.dimension())
-        min_wt = int(self.length())
+        n = int(self.length())
+        stop_bound = max(1, self.design_distance())
 
-        for lead in range(k):
+        if int(field.characteristic()) == 2 and int(field.cardinality()) <= 65536:
+            return _gf2m_min_distance(gen_mat, field, k, n, stop_bound)
+
+        min_wt = n
+        for lead in range(k - 1, -1, -1):
             lead_row = gen_mat.row(lead)
             tail_dim = k - lead - 1
             if tail_dim == 0:
                 wt = int(lead_row.hamming_weight())
                 if 0 < wt < min_wt:
                     min_wt = wt
-                    if min_wt == 1:
-                        return 1
+                    if min_wt <= stop_bound:
+                        return min_wt
                 continue
             sub_gen = gen_mat.matrix_from_rows(list(range(lead + 1, k)))
             for tail_vec in VectorSpace(field, tail_dim):
@@ -408,8 +678,8 @@ class TamoBargCodeTwoSets(AbstractLinearCode):
                 wt = int(cw.hamming_weight())
                 if 0 < wt < min_wt:
                     min_wt = wt
-                    if min_wt == 1:
-                        return 1
+                    if min_wt <= stop_bound:
+                        return min_wt
         return min_wt
 
 
@@ -429,7 +699,7 @@ class TamoBargTwoSetsVectorEncoder(Encoder):
         self._num_of_sets: int = code.num_of_sets()
         self._partition, self._partition_size = code.partition()
         self._sub_group, self._sub_group_type = code.sub_group()
-        self._base_poly_ring = PolynomialRing(code.base_field(), "x")
+        self._base_poly_ring = PolynomialRing(code.base_field(), "x", implementation="generic")
 
         self._good_poly: list[Any] = []
         self._algebra_basis: list[list[Any]] = []
@@ -451,12 +721,14 @@ class TamoBargTwoSetsVectorEncoder(Encoder):
             int(code.length()),
         )
         self._max_dimension: int = len(full_comb_basis)
-        k = int(code.dimension())
+        raw_dim = code.dimension()
+        k = self._max_dimension if raw_dim is None else int(raw_dim)
         if k < 1 or k > self._max_dimension:
             raise ValueError(
                 f"Code dimension ({k}) must satisfy 1 <= dimension <= {self._max_dimension}"
             )
         self._comb_enc_basis: list[Any] = full_comb_basis[:k]
+        self._row_matrix_space = MatrixSpace(code.base_field(), 1, k)
 
     def _repr_(self) -> str:
         """Return string representation of the vector encoder."""
@@ -493,17 +765,63 @@ class TamoBargTwoSetsVectorEncoder(Encoder):
         """Return the dimension of the full intersection encoding subspace."""
         return self._max_dimension
 
+    def encode(self, word: Any) -> Any:
+        """Encode ``word`` into a codeword via a 1-row matrix product with ``G``."""
+        msg_space = self.message_space()
+        if word not in msg_space:
+            raise ValueError(f"The value to encode must be in {msg_space}")
+        return (self._row_matrix_space(list(word)) * self.generator_matrix()).row(0)
+
     @cached_method
     def generator_matrix(self) -> Any:
         """Build and cache the immutable ``k x n`` generator matrix over ``GF(q)``."""
         code = self.code()
+        field = code.base_field()
+        k = int(code.dimension())
+        n = int(code.length())
         alphas = code.evaluation_points()
-        gen_mat = matrix(
-            code.base_field(),
-            code.dimension(),
-            code.length(),
-            [[poly(alpha) for alpha in alphas] for poly in self._comb_enc_basis],
-        )
+
+        if int(field.characteristic()) == 2 and int(field.cardinality()) <= 65536:
+            q = int(field.cardinality())
+            exp_tbl, log_tbl, int_to_elem = _gf2m_tables(field)
+            dtype = np.uint8 if q <= 256 else np.uint16
+            if q == 2:
+                alpha_int = np.array([int(a) for a in alphas], dtype=dtype)
+            else:
+                alpha_int = np.array([int(a.to_integer()) for a in alphas], dtype=dtype)
+            nz_alpha = alpha_int != 0
+            alpha_logs = log_tbl[alpha_int[nz_alpha]].astype(np.int64)
+            q_minus_1 = q - 1
+
+            rows: list[list[Any]] = []
+            for poly in self._comb_enc_basis:
+                coeffs = poly.list()
+                if not coeffs:
+                    rows.append([field.zero()] * n)
+                    continue
+                c0 = int(coeffs[0]) if q == 2 else int(coeffs[0].to_integer())
+                row_int = np.full(n, c0, dtype=dtype)
+                nz_degs: list[int] = []
+                nz_clogs: list[int] = []
+                for deg in range(1, len(coeffs)):
+                    c_val = int(coeffs[deg]) if q == 2 else int(coeffs[deg].to_integer())
+                    if c_val != 0:
+                        nz_degs.append(deg)
+                        nz_clogs.append(int(log_tbl[c_val]))
+                if nz_degs and np.any(nz_alpha):
+                    d_arr = np.array(nz_degs, dtype=np.int64)
+                    c_logs = np.array(nz_clogs, dtype=np.int64)
+                    exps = c_logs[:, None] + (d_arr[:, None] * alpha_logs[None, :]) % q_minus_1
+                    row_int[nz_alpha] ^= np.bitwise_xor.reduce(exp_tbl[exps], axis=0)
+                rows.append([int_to_elem[v] for v in row_int.tolist()])
+            gen_mat = matrix(field, k, n, rows)
+        else:
+            gen_mat = matrix(
+                field,
+                k,
+                n,
+                [[poly(alpha) for alpha in alphas] for poly in self._comb_enc_basis],
+            )
         gen_mat.set_immutable()
         return gen_mat
 
@@ -525,8 +843,12 @@ class TamoBargIterativeDecoder(Decoder):
         super().__init__(code, code.ambient_space(), "VectorEncoder")
         self._max_num_of_itr: int = int(max_num_of_itr)
         self._F = code.base_field()
+        self._ambient_space = code.ambient_space()
         self._partitions, _ = code.partition()
         self._evalpts_idx = code.evaluation_points_idx()
+        self._local_vector_spaces = [
+            VectorSpace(self._F, len(self._evalpts_idx[i][0])) for i in (0, 1)
+        ]
 
         self._partitions_local_codes: list[list[GeneralizedReedSolomonCode]] = []
         self._partitions_local_decoders: list[list[Any]] = []
@@ -552,23 +874,21 @@ class TamoBargIterativeDecoder(Decoder):
 
     def _partition_is_syndrome_clean(self, part_idx: int, work: Any) -> bool:
         """Return True if every coset in partition ``part_idx`` has zero local syndrome."""
-        for j, idxs in enumerate(self._evalpts_idx[part_idx]):
-            local_vec = vector(self._F, [work[idx] for idx in idxs])
-            if not (self._local_parity_checks[part_idx][j] * local_vec).is_zero():
-                return False
-        return True
+        return _partition_is_syndrome_clean(
+            part_idx,
+            work,
+            self._evalpts_idx,
+            self._local_parity_checks,
+            self._local_vector_spaces[part_idx],
+        )
 
-    def decode_to_code(self, r: Any) -> tuple[Any, int]:
-        """Iteratively decode cosets of both partitions without mutating ``r``.
-
-        Args:
-            r: Received word in ``GF(q)^n``.
-
-        Returns:
-            Tuple ``(corrected_word, num_itr)``.
-        """
-        work = copy(vector(self._F, r))
+    def _decode_with_status(self, r: Any) -> tuple[Any, int, bool]:
+        """Iteratively decode ``r`` and return ``(work, num_itr, converged)``."""
+        work = copy(self._ambient_space(r))
         num_itr = 0
+        converged = False
+        prev_state_1: tuple[Any, ...] | None = tuple(work)
+        prev_state_2: tuple[Any, ...] | None = None
 
         while num_itr < self._max_num_of_itr:
             uncorrectable_err = [False, False]
@@ -576,12 +896,15 @@ class TamoBargIterativeDecoder(Decoder):
             changed_in_p1 = False
 
             for i in (0, 1):
+                local_vs = self._local_vector_spaces[i]
+                pcms = self._local_parity_checks[i]
+                decoders = self._partitions_local_decoders[i]
                 for j, idxs in enumerate(self._evalpts_idx[i]):
-                    local_vec = vector(self._F, [work[idx] for idx in idxs])
-                    if (self._local_parity_checks[i][j] * local_vec).is_zero():
+                    local_vec = local_vs([work[idx] for idx in idxs])
+                    if (pcms[j] * local_vec).is_zero():
                         continue
                     try:
-                        corr_c = self._partitions_local_decoders[i][j].decode_to_code(local_vec)
+                        corr_c = decoders[j].decode_to_code(local_vec)
                     except (DecodingError, ValueError):
                         uncorrectable_err[i] = True
                         continue
@@ -596,16 +919,35 @@ class TamoBargIterativeDecoder(Decoder):
             num_itr += 1
             if not uncorrectable_err[0] and not uncorrectable_err[1]:
                 if not changed_in_p1 or self._partition_is_syndrome_clean(0, work):
+                    converged = True
                     break
             elif not changed_in_itr:
                 break
 
+            curr_state = tuple(work)
+            if curr_state == prev_state_2:
+                break
+            prev_state_2 = prev_state_1
+            prev_state_1 = curr_state
+
+        return work, num_itr, converged
+
+    def decode_to_code(self, r: Any) -> tuple[Any, int]:
+        """Iteratively decode cosets of both partitions without mutating ``r``.
+
+        Args:
+            r: Received word in ``GF(q)^n``.
+
+        Returns:
+            Tuple ``(corrected_word, num_itr)``.
+        """
+        work, num_itr, _ = self._decode_with_status(r)
         return work, num_itr
 
     def decode_to_message(self, r: Any) -> Any:
         """Decode ``r`` to its unencoded message vector."""
-        corr_c, _ = self.decode_to_code(r)
-        return self.code().unencode(corr_c)
+        corr_c, _, converged = self._decode_with_status(r)
+        return self.code().unencode(corr_c, nocheck=converged)
 
 
 class TamoBargIterativeEEDecoder(Decoder):
@@ -623,7 +965,8 @@ class TamoBargIterativeEEDecoder(Decoder):
             code: Associated ``TamoBargCodeTwoSets`` instance.
             max_num_of_itr: Maximum number of alternating two-partition iterations.
             erasure_start_itr: Iteration index (1-based) at which DUE coset erasure
-                marking begins; defaults to ``max_num_of_itr // 2``.
+                marking begins; if ``None``, triggers immediately on hard-decision stall
+                (or at ``max_num_of_itr // 2``, whichever comes first).
         """
         if not _is_int_like(max_num_of_itr) or int(max_num_of_itr) < 0:
             raise ValueError(
@@ -631,6 +974,7 @@ class TamoBargIterativeEEDecoder(Decoder):
             )
         super().__init__(code, code.ambient_space(), "VectorEncoder")
         self._max_num_of_itr: int = int(max_num_of_itr)
+        self._dynamic_erasure_start: bool = erasure_start_itr is None
         if erasure_start_itr is None:
             self._erasure_start_itr: int = self._max_num_of_itr // 2
         else:
@@ -641,27 +985,37 @@ class TamoBargIterativeEEDecoder(Decoder):
             self._erasure_start_itr = int(erasure_start_itr)
 
         self._F = code.base_field()
-        self._poly_ring = PolynomialRing(self._F, "x")
+        self._ambient_space = code.ambient_space()
+        self._era_ambient_space = VectorSpace(GF(2), int(code.length()))
+        self._poly_ring = PolynomialRing(self._F, "x", implementation="generic")
         self._partitions, _ = code.partition()
         self._evalpts_idx = code.evaluation_points_idx()
         self._local_min_distances = code.local_minimum_distance()
+        self._local_vector_spaces = [
+            VectorSpace(self._F, len(self._evalpts_idx[i][0])) for i in (0, 1)
+        ]
+        self._local_era_spaces = [VectorSpace(GF(2), len(self._evalpts_idx[i][0])) for i in (0, 1)]
 
         self._partitions_local_codes: list[list[GeneralizedReedSolomonCode]] = []
         self._partitions_local_decoders: list[list[Any]] = []
+        self._partitions_local_gao_decoders: list[list[Any]] = []
         self._local_parity_checks: list[list[Any]] = []
 
         localities = code.locality()
         for i, partition in enumerate(self._partitions):
             code_tmp: list[GeneralizedReedSolomonCode] = []
             decoder_tmp: list[Any] = []
+            gao_tmp: list[Any] = []
             pcm_tmp: list[Any] = []
             for coset in partition:
                 local_grs = GeneralizedReedSolomonCode(coset, localities[i])
                 code_tmp.append(local_grs)
                 decoder_tmp.append(local_grs.decoder("ErrorErasure"))
+                gao_tmp.append(local_grs.decoder("Gao"))
                 pcm_tmp.append(_safe_parity_check_matrix(local_grs))
             self._partitions_local_codes.append(code_tmp)
             self._partitions_local_decoders.append(decoder_tmp)
+            self._partitions_local_gao_decoders.append(gao_tmp)
             self._local_parity_checks.append(pcm_tmp)
 
     def _repr_(self) -> str:
@@ -670,33 +1024,36 @@ class TamoBargIterativeEEDecoder(Decoder):
 
     def _partition_is_syndrome_clean(self, part_idx: int, work: Any) -> bool:
         """Return True if every coset in partition ``part_idx`` has zero local syndrome."""
-        for j, idxs in enumerate(self._evalpts_idx[part_idx]):
-            local_vec = vector(self._F, [work[idx] for idx in idxs])
-            if not (self._local_parity_checks[part_idx][j] * local_vec).is_zero():
-                return False
-        return True
+        return _partition_is_syndrome_clean(
+            part_idx,
+            work,
+            self._evalpts_idx,
+            self._local_parity_checks,
+            self._local_vector_spaces[part_idx],
+        )
 
-    def decode_to_code(self, r: Any) -> tuple[tuple[Any, Any], int]:
-        """Iteratively decode errors and DUE-marked erasures without mutating ``r``.
-
-        Args:
-            r: Received word in ``GF(q)^n``.
-
-        Returns:
-            Tuple ``((corrected_word, erasure_vector), num_itr)``.
-        """
-        work = copy(vector(self._F, r))
+    def _decode_with_status(self, r: Any) -> tuple[tuple[Any, Any], int, bool]:
+        """Iteratively decode ``r`` and return ``((work, era_vec), num_itr, converged)``."""
+        work = copy(self._ambient_space(r))
         erasure_flags = [0] * len(work)
         num_itr = 0
+        converged = False
+        erasures_activated = False
 
         while num_itr < self._max_num_of_itr:
             prev_work = list(work)
             prev_erasures = list(erasure_flags)
             uncorrectable_err = [False, False]
+            changed_in_p1 = False
             due_status: list[list[bool]] = []
 
             for i in (0, 1):
                 d_local = self._local_min_distances[i]
+                local_vs = self._local_vector_spaces[i]
+                local_era_vs = self._local_era_spaces[i]
+                pcms = self._local_parity_checks[i]
+                ee_decoders = self._partitions_local_decoders[i]
+                gao_decoders = self._partitions_local_gao_decoders[i]
                 due_tmp: list[bool] = []
                 for j, coset in enumerate(self._partitions[i]):
                     idxs = self._evalpts_idx[i][j]
@@ -704,30 +1061,48 @@ class TamoBargIterativeEEDecoder(Decoder):
                     era_list = [erasure_flags[idx] for idx in idxs]
                     era_wt = sum(era_list)
 
-                    if (
-                        era_wt == 0
-                        and (self._local_parity_checks[i][j] * vector(self._F, r_list)).is_zero()
-                    ):
-                        due_tmp.append(False)
+                    if era_wt == 0:
+                        local_vec = local_vs(r_list)
+                        if (pcms[j] * local_vec).is_zero():
+                            due_tmp.append(False)
+                            continue
+                        try:
+                            corr_c = gao_decoders[j].decode_to_code(local_vec)
+                        except (DecodingError, ValueError):
+                            due_tmp.append(True)
+                            uncorrectable_err[i] = True
+                        else:
+                            if corr_c != local_vec:
+                                if i == 1:
+                                    changed_in_p1 = True
+                                for pos, idx in enumerate(idxs):
+                                    work[idx] = corr_c[pos]
+                            due_tmp.append(False)
                     elif era_wt >= d_local:
                         due_tmp.append(True)
                         uncorrectable_err[i] = True
                     elif era_wt == d_local - 1:
                         corr_list = interpolate_erasures(self._poly_ring, coset, r_list, era_list)
                         for pos, idx in enumerate(idxs):
+                            if i == 1 and work[idx] != corr_list[pos]:
+                                changed_in_p1 = True
                             work[idx] = corr_list[pos]
                         due_tmp.append(False)
                     else:
+                        local_vec = local_vs(r_list)
                         try:
-                            corr_c = self._partitions_local_decoders[i][j].decode_to_code(
-                                (vector(self._F, r_list), vector(GF(2), era_list))
+                            corr_c = ee_decoders[j].decode_to_code(
+                                (local_vec, local_era_vs(era_list))
                             )
                         except (DecodingError, ValueError):
                             due_tmp.append(True)
                             uncorrectable_err[i] = True
                         else:
-                            for pos, idx in enumerate(idxs):
-                                work[idx] = corr_c[pos]
+                            if corr_c != local_vec:
+                                if i == 1:
+                                    changed_in_p1 = True
+                                for pos, idx in enumerate(idxs):
+                                    work[idx] = corr_c[pos]
                             due_tmp.append(False)
 
                 due_status.append(due_tmp)
@@ -737,16 +1112,22 @@ class TamoBargIterativeEEDecoder(Decoder):
             if (
                 not uncorrectable_err[0]
                 and not uncorrectable_err[1]
-                and self._partition_is_syndrome_clean(0, work)
+                and (not changed_in_p1 or self._partition_is_syndrome_clean(0, work))
             ):
                 for s in (0, 1):
                     for t, idxs in enumerate(self._evalpts_idx[s]):
                         if not due_status[s][t]:
                             for idx in idxs:
                                 erasure_flags[idx] = 0
+                converged = True
                 break
 
-            if num_itr >= self._erasure_start_itr:
+            work_stalled = list(work) == prev_work
+            trigger_erasures = num_itr >= self._erasure_start_itr or (
+                self._dynamic_erasure_start and (erasures_activated or work_stalled)
+            )
+            if trigger_erasures:
+                erasures_activated = True
                 for t, idxs in enumerate(self._evalpts_idx[0]):
                     mark = 1 if due_status[0][t] else 0
                     for idx in idxs:
@@ -757,18 +1138,33 @@ class TamoBargIterativeEEDecoder(Decoder):
                             erasure_flags[idx] = 0
 
             if (
-                num_itr > self._erasure_start_itr
-                and list(work) == prev_work
+                (
+                    num_itr > self._erasure_start_itr
+                    or (self._dynamic_erasure_start and erasures_activated)
+                )
+                and work_stalled
                 and erasure_flags == prev_erasures
             ):
                 break
 
-        return (work, vector(GF(2), erasure_flags)), num_itr
+        return (work, self._era_ambient_space(erasure_flags)), num_itr, converged
+
+    def decode_to_code(self, r: Any) -> tuple[tuple[Any, Any], int]:
+        """Iteratively decode errors and DUE-marked erasures without mutating ``r``.
+
+        Args:
+            r: Received word in ``GF(q)^n``.
+
+        Returns:
+            Tuple ``((corrected_word, erasure_vector), num_itr)``.
+        """
+        pair, num_itr, _ = self._decode_with_status(r)
+        return pair, num_itr
 
     def decode_to_message(self, r: Any) -> Any:
         """Decode ``r`` to its unencoded message vector."""
-        (corr_c, _), _ = self.decode_to_code(r)
-        return self.code().unencode(corr_c)
+        (corr_c, _), _, converged = self._decode_with_status(r)
+        return self.code().unencode(corr_c, nocheck=converged)
 
 
 class TamoBargGlobalDecoder(Decoder):
@@ -778,6 +1174,7 @@ class TamoBargGlobalDecoder(Decoder):
         """Initialize the ambient global GRS code, Gao decoder, and parity-check matrix."""
         super().__init__(code, code.ambient_space(), "VectorEncoder")
         self._F = code.base_field()
+        self._ambient_space = code.ambient_space()
         self._global_grs = GeneralizedReedSolomonCode(
             code.evaluation_points(),
             int(code.length()) - code.design_distance() + 1,
@@ -798,7 +1195,7 @@ class TamoBargGlobalDecoder(Decoder):
         Returns:
             Decoded codeword vector in ``GF(q)^n``.
         """
-        work = copy(vector(self._F, r))
+        work = copy(self._ambient_space(r))
         if (self._global_pcm * work).is_zero():
             return work
         return self._global_decoder.decode_to_code(work)
@@ -809,18 +1206,21 @@ class TamoBargGlobalEEDecoder(Decoder):
 
     def __init__(self, code: TamoBargCodeTwoSets) -> None:
         """Initialize the Cartesian input space and global GRS ErrorErasure decoder."""
-        input_space = cartesian_product(
-            [code.ambient_space(), VectorSpace(GF(2), int(code.length()))]
-        )
+        era_space = VectorSpace(GF(2), int(code.length()))
+        input_space = cartesian_product([code.ambient_space(), era_space])
         super().__init__(code, input_space, "VectorEncoder")
         self._F = code.base_field()
-        self._poly_ring = PolynomialRing(self._F, "x")
+        self._ambient_space = code.ambient_space()
+        self._era_space = era_space
+        self._poly_ring = PolynomialRing(self._F, "x", implementation="generic")
         self._global_grs = GeneralizedReedSolomonCode(
             code.evaluation_points(),
             int(code.length()) - code.design_distance() + 1,
         )
         self._global_decoder = self._global_grs.decoder("ErrorErasure")
+        self._global_gao_decoder = self._global_grs.decoder("Gao")
         self._global_pcm = _safe_parity_check_matrix(self._global_grs)
+        self._d_glob: int = int(self._global_grs.minimum_distance())
 
     def _repr_(self) -> str:
         """Return string representation of the global erasure-and-error decoder."""
@@ -841,23 +1241,24 @@ class TamoBargGlobalEEDecoder(Decoder):
                 or error-and-erasure decoding fails.
         """
         word, erasure_vector = word_and_erasure_vector
-        work = copy(vector(self._F, word))
-        era_vec = copy(vector(GF(2), erasure_vector))
+        work = copy(self._ambient_space(word))
+        era_vec = copy(self._era_space(erasure_vector))
         era_wt = int(era_vec.hamming_weight())
-        d_glob = int(self._global_grs.minimum_distance())
 
-        if era_wt == 0 and (self._global_pcm * work).is_zero():
-            return work
-        if era_wt >= d_glob:
+        if era_wt == 0:
+            if (self._global_pcm * work).is_zero():
+                return work
+            return self._global_gao_decoder.decode_to_code(work)
+        if era_wt >= self._d_glob:
             raise DecodingError("Too many erasures for global decoder")
-        if era_wt == d_glob - 1:
+        if era_wt == self._d_glob - 1:
             corr_list = interpolate_erasures(
                 self._poly_ring,
                 self.code().evaluation_points(),
                 list(work),
                 list(era_vec),
             )
-            return vector(self._F, corr_list)
+            return self._ambient_space(corr_list)
         return self._global_decoder.decode_to_code((work, era_vec))
 
 
@@ -869,10 +1270,22 @@ class TamoBargTwoStepDecoder(Decoder):
         super().__init__(code, code.ambient_space(), "VectorEncoder")
         self._iter_decoder = TamoBargIterativeDecoder(code, max_num_of_itr)
         self._global_decoder = TamoBargGlobalDecoder(code)
+        self._is_full_dim: bool = int(code.dimension()) == code.max_dimension()
 
     def _repr_(self) -> str:
         """Return string representation of the two-step decoder."""
         return f"Two-Steps Decoder for {self.code()}"
+
+    def _decode_with_status(self, r: Any) -> tuple[Any, int, bool]:
+        """Run iterative local decoding and optional global cleanup, returning status."""
+        tmp, num_itr, converged = self._iter_decoder._decode_with_status(r)
+        if self._is_full_dim and converged:
+            return tmp, num_itr, True
+        try:
+            result = self._global_decoder.decode_to_code(tmp)
+        except (DecodingError, ValueError):
+            return tmp, num_itr, converged
+        return result, num_itr, True
 
     def decode_to_code(self, r: Any) -> tuple[Any, int]:
         """Run iterative local decoding followed by global GRS decoding.
@@ -883,17 +1296,13 @@ class TamoBargTwoStepDecoder(Decoder):
         Returns:
             Tuple ``(corrected_word, num_itr)``.
         """
-        tmp, num_itr = self._iter_decoder.decode_to_code(r)
-        try:
-            result = self._global_decoder.decode_to_code(tmp)
-        except (DecodingError, ValueError):
-            result = tmp
+        result, num_itr, _ = self._decode_with_status(r)
         return result, num_itr
 
     def decode_to_message(self, r: Any) -> Any:
         """Decode ``r`` to its unencoded message vector."""
-        corr_c, _ = self.decode_to_code(r)
-        return self.code().unencode(corr_c)
+        corr_c, _, decoded = self._decode_with_status(r)
+        return self.code().unencode(corr_c, nocheck=decoded)
 
 
 class TamoBargTwoStepEEDecoder(Decoder):
@@ -909,10 +1318,28 @@ class TamoBargTwoStepEEDecoder(Decoder):
         super().__init__(code, code.ambient_space(), "VectorEncoder")
         self._iter_ee_decoder = TamoBargIterativeEEDecoder(code, max_num_of_itr, erasure_start_itr)
         self._global_ee_decoder = TamoBargGlobalEEDecoder(code)
+        self._is_full_dim: bool = int(code.dimension()) == code.max_dimension()
+        self._d_glob: int = self._global_ee_decoder._d_glob
 
     def _repr_(self) -> str:
         """Return string representation of the two-step erasure-and-error decoder."""
         return f"Two-Steps Erasure-and-Error Decoder for {self.code()}"
+
+    def _decode_with_status(self, r: Any) -> tuple[Any, int, int, bool]:
+        """Run iterative EE decoding and optional global EE cleanup, returning status."""
+        (word_after_iter, era_vec), num_itr, converged = self._iter_ee_decoder._decode_with_status(
+            r
+        )
+        num_rem_era = int(era_vec.hamming_weight())
+        if self._is_full_dim and converged:
+            return word_after_iter, num_itr, num_rem_era, True
+        if num_rem_era >= self._d_glob:
+            return word_after_iter, num_itr, num_rem_era, False
+        try:
+            result = self._global_ee_decoder.decode_to_code((word_after_iter, era_vec))
+        except (DecodingError, ValueError):
+            return word_after_iter, num_itr, num_rem_era, converged
+        return result, num_itr, num_rem_era, True
 
     def decode_to_code(self, r: Any) -> tuple[Any, int, int]:
         """Run iterative EE decoding followed by global EE decoding.
@@ -923,18 +1350,13 @@ class TamoBargTwoStepEEDecoder(Decoder):
         Returns:
             Tuple ``(corrected_word, num_itr, num_rem_era)``.
         """
-        (word_after_iter, era_vec), num_itr = self._iter_ee_decoder.decode_to_code(r)
-        num_rem_era = int(era_vec.hamming_weight())
-        try:
-            result = self._global_ee_decoder.decode_to_code((word_after_iter, era_vec))
-        except (DecodingError, ValueError):
-            result = word_after_iter
+        result, num_itr, num_rem_era, _ = self._decode_with_status(r)
         return result, num_itr, num_rem_era
 
     def decode_to_message(self, r: Any) -> Any:
         """Decode ``r`` to its unencoded message vector."""
-        corr_c, _, _ = self.decode_to_code(r)
-        return self.code().unencode(corr_c)
+        corr_c, _, _, decoded = self._decode_with_status(r)
+        return self.code().unencode(corr_c, nocheck=decoded)
 
 
 TamoBargCodeTwoSets._registered_encoders["VectorEncoder"] = TamoBargTwoSetsVectorEncoder

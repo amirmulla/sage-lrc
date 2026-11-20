@@ -3,11 +3,11 @@
 import argparse
 from collections.abc import Sequence
 
-from tamo_barg_lrc.simulation import add_common_simulation_args, run_error_weight_simulation
-
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the command-line argument parser for ``error_weight.py``."""
+    from tamo_barg_lrc.simulation import add_common_simulation_args
+
     parser = argparse.ArgumentParser(
         description="Simulate residual error-weight transitions for two-set Tamo-Barg decoders."
     )
@@ -46,6 +46,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = parser.parse_args(argv)
     max_err = args.exact_distance + 1 if args.exact_distance is not None else args.max_err
 
+    from tamo_barg_lrc.simulation import run_error_weight_simulation
+
     run_error_weight_simulation(
         q=args.q,
         n=args.n,
@@ -62,6 +64,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         use_enc=args.use_enc,
         output_dir=args.output_dir,
         seed=args.seed,
+        plot_graph=not args.no_plot,
+        workers=args.workers,
+        stop_after_zero_runs=args.stop_after_zero_runs,
     )
 
 
